@@ -18,19 +18,19 @@ export default function AdminDashboard() {
   const [editingDeptId, setEditingDeptId] = useState<string | null>(null);
   const [editDeptData, setEditDeptData] = useState<Partial<Department>>({});
 
-  // --- 更新日用のState ---
   const [lastUpdated, setLastUpdated] = useState('');
-
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
+
+  // --- ダッシュボード用の検索State ---
+  const [searchQueryTemple, setSearchQueryTemple] = useState('');
+  const [searchQueryDept, setSearchQueryDept] = useState('');
   
   const fileInputRef = useRef<HTMLInputElement>(null);
   const deptFileInputRef = useRef<HTMLInputElement>(null);
   const navigate = useNavigate();
 
   const fetchTemples = async () => {
-    const { data, error } = await supabase.from('temples').select('*');
-    if (error) return setError(error.message);
+    const { data } = await supabase.from('temples').select('*');
     const sortedData = (data || []).sort((a, b) => {
       const idA = a.branches && a.branches.length > 0 ? a.branches[0].id : '9999';
       const idB = b.branches && b.branches.length > 0 ? b.branches[0].id : '9999';
@@ -40,12 +40,10 @@ export default function AdminDashboard() {
   };
 
   const fetchDepartments = async () => {
-    const { data, error } = await supabase.from('departments').select('*').order('sort_order', { ascending: true });
-    if (error) return setError(error.message);
+    const { data } = await supabase.from('departments').select('*').order('sort_order', { ascending: true });
     setDepartments(data || []);
   };
 
-  // --- 更新日の取得 ---
   const fetchSettings = async () => {
     const { data } = await supabase.from('app_settings').select('value').eq('key', 'last_updated').single();
     if (data) setLastUpdated(data.value);
@@ -70,7 +68,6 @@ export default function AdminDashboard() {
     navigate('/admin/login');
   };
 
-  // --- 更新日の保存処理 ---
   const handleSaveLastUpdated = async () => {
     try {
       const { error } = await supabase.from('app_settings').upsert({ key: 'last_updated', value: lastUpdated });
@@ -81,7 +78,6 @@ export default function AdminDashboard() {
     }
   };
 
-  // ... (寺院・部署の削除・編集・追加・CSV処理関数などはすべて前回と全く同じため省略せずにそのまま維持)
   const handleDeleteTemple = async (id: string, name: string) => { if (!window.confirm(`「${name || '空白のレコード'}」を削除しますか？`)) return; const { error } = await supabase.from('temples').delete().eq('id', id); if (!error) setTemples(temples.filter(t => t.id !== id)); };
   const startEditing = (id: string, currentName: string) => { setEditingId(id); setEditPriestName(currentName || ''); };
   const savePriestName = async (id: string) => { const { error } = await supabase.from('temples').update({ priest_name: editPriestName }).eq('id', id); if (!error) { setTemples(temples.map(t => t.id === id ? { ...t, priest_name: editPriestName } : t)); setEditingId(null); } };
@@ -99,7 +95,27 @@ export default function AdminDashboard() {
   const handleImportDepartmentsCSV = async (e: React.ChangeEvent<HTMLInputElement>) => { const file = e.target.files?.[0]; if (!file) return; if (!window.confirm('部署のCSVデータでデータベースを更新します。よろしいですか？')) { if (deptFileInputRef.current) deptFileInputRef.current.value = ''; return; } const reader = new FileReader(); reader.onload = async (event) => { try { setLoading(true); const text = event.target?.result as string; const rows = text.split(/\r?\n/).filter(row => row.trim() !== ''); const headers = parseCSVRow(rows[0]).map(h => h.trim()); const newData = rows.slice(1).map(row => { const values = parseCSVRow(row); const dept: any = {}; headers.forEach((header, index) => { const val = values[index] !== undefined ? values[index].trim() : ''; if (header === 'id') { if (val) dept.id = val; } else if (header === 'sort_order') { dept.sort_order = parseInt(val, 10) || 0; } else { dept[header] = val; } }); return dept; }); const toUpdate = newData.filter(d => d.id); const toInsert = newData.filter(d => !d.id); if (toUpdate.length > 0) { const { error } = await supabase.from('departments').upsert(toUpdate); if (error) throw error; } if (toInsert.length > 0) { const { error } = await supabase.from('departments').insert(toInsert); if (error) throw error; } alert('部署データのインポートが完了しました。'); fetchDepartments(); } catch (err: any) { alert(`エラー: ${err.message}`); } finally { setLoading(false); if (deptFileInputRef.current) deptFileInputRef.current.value = ''; } }; reader.readAsText(file); };
 
   if (loading) return <div style={{ padding: '20px' }}>読み込み中...</div>;
-  if (error) return <div style={{ padding: '20px', color: 'red' }}>エラー: {error}</div>;
+
+  // --- 検索による絞り込み処理 ---
+  const filteredTemples = temples.filter(t => {
+    if (!searchQueryTemple) return true;
+    const q = searchQueryTemple.toLowerCase();
+    return (
+      (t.name && t.name.toLowerCase().includes(q)) ||
+      (t.region && t.region.toLowerCase().includes(q)) ||
+      (t.priest_name && t.priest_name.toLowerCase().includes(q))
+    );
+  });
+
+  const filteredDepartments = departments.filter(d => {
+    if (!searchQueryDept) return true;
+    const q = searchQueryDept.toLowerCase();
+    return (
+      (d.name && d.name.toLowerCase().includes(q)) ||
+      (d.phone && d.phone.includes(q)) ||
+      (d.extension && d.extension.includes(q))
+    );
+  });
 
   return (
     <div style={{ padding: '20px', maxWidth: '1000px', margin: '0 auto' }}>
@@ -108,65 +124,69 @@ export default function AdminDashboard() {
         <button onClick={handleLogout} style={{ padding: '8px 16px', cursor: 'pointer' }}>ログアウト</button>
       </div>
 
-      {/* --- 更新日の設定エリアを追加 --- */}
       <div style={{ background: '#e9ecef', padding: '15px', borderRadius: '8px', marginBottom: '20px', display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
         <strong style={{ fontSize: '16px' }}>名簿の公開更新日:</strong>
-        <input 
-          type="date" 
-          value={lastUpdated} 
-          onChange={(e) => setLastUpdated(e.target.value)} 
-          style={{ padding: '8px', fontSize: '16px', borderRadius: '4px', border: '1px solid #ccc' }}
-        />
-        <button onClick={handleSaveLastUpdated} style={{ padding: '8px 16px', background: '#343a40', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>
-          日付を保存する
-        </button>
+        <input type="date" value={lastUpdated} onChange={(e) => setLastUpdated(e.target.value)} style={{ padding: '8px', fontSize: '16px', borderRadius: '4px', border: '1px solid #ccc' }} />
+        <button onClick={handleSaveLastUpdated} style={{ padding: '8px 16px', background: '#343a40', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>日付を保存する</button>
       </div>
 
       <div style={{ display: 'flex', gap: '10px', marginBottom: '20px', borderBottom: '2px solid #ccc', paddingBottom: '10px' }}>
-        <button 
-          onClick={() => setActiveTab('temples')} 
-          style={{ padding: '10px 20px', fontSize: '16px', cursor: 'pointer', background: activeTab === 'temples' ? '#0056b3' : '#f8f9fa', color: activeTab === 'temples' ? 'white' : 'black', border: '1px solid #ccc', borderRadius: '4px' }}
-        >
+        <button onClick={() => setActiveTab('temples')} style={{ padding: '10px 20px', fontSize: '16px', cursor: 'pointer', background: activeTab === 'temples' ? '#0056b3' : '#f8f9fa', color: activeTab === 'temples' ? 'white' : 'black', border: '1px solid #ccc', borderRadius: '4px' }}>
           寺院データ管理
         </button>
-        <button 
-          onClick={() => setActiveTab('departments')} 
-          style={{ padding: '10px 20px', fontSize: '16px', cursor: 'pointer', background: activeTab === 'departments' ? '#0056b3' : '#f8f9fa', color: activeTab === 'departments' ? 'white' : 'black', border: '1px solid #ccc', borderRadius: '4px' }}
-        >
+        <button onClick={() => setActiveTab('departments')} style={{ padding: '10px 20px', fontSize: '16px', cursor: 'pointer', background: activeTab === 'departments' ? '#0056b3' : '#f8f9fa', color: activeTab === 'departments' ? 'white' : 'black', border: '1px solid #ccc', borderRadius: '4px' }}>
           総本山 部署データ管理
         </button>
       </div>
 
       {activeTab === 'temples' && (
         <>
-          <div style={{ display: 'flex', gap: '10px', marginBottom: '15px', flexWrap: 'wrap' }}>
-            <button onClick={handleExportCSV} style={{ padding: '8px 16px', background: '#007bff', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>↓ CSV出力</button>
-            <input type="file" accept=".csv" ref={fileInputRef} onChange={handleImportCSV} style={{ display: 'none' }} />
-            <button onClick={() => fileInputRef.current?.click()} style={{ padding: '8px 16px', background: '#ffc107', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>↑ CSV読込</button>
-            <button onClick={() => navigate('/admin/add')} style={{ padding: '8px 16px', background: '#28a745', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>+ 新規寺院追加</button>
+          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '15px', flexWrap: 'wrap', gap: '15px' }}>
+            <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+              <button onClick={handleExportCSV} style={{ padding: '8px 16px', background: '#007bff', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>↓ CSV出力</button>
+              <input type="file" accept=".csv" ref={fileInputRef} onChange={handleImportCSV} style={{ display: 'none' }} />
+              <button onClick={() => fileInputRef.current?.click()} style={{ padding: '8px 16px', background: '#ffc107', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>↑ CSV読込</button>
+              <button onClick={() => navigate('/admin/add')} style={{ padding: '8px 16px', background: '#28a745', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>+ 新規寺院追加</button>
+            </div>
+            {/* --- 寺院用の検索窓を追加 --- */}
+            <input 
+              type="text" 
+              placeholder="寺院名・布教区・住職名で検索" 
+              value={searchQueryTemple} 
+              onChange={(e) => setSearchQueryTemple(e.target.value)} 
+              style={{ padding: '8px', width: '300px', border: '1px solid #ccc', borderRadius: '4px' }}
+            />
           </div>
           
           <table style={{ width: '100%', borderCollapse: 'collapse', border: '1px solid #ccc' }}>
             <thead>
+              {/* --- テーブル項目をシンプルに整理 --- */}
               <tr style={{ background: '#f5f5f5', textAlign: 'left' }}>
-                <th style={{ padding: '10px', borderBottom: '1px solid #ccc' }}>布教区</th>
-                <th style={{ padding: '10px', borderBottom: '1px solid #ccc' }}>識別番号</th>
-                <th style={{ padding: '10px', borderBottom: '1px solid #ccc' }}>寺院名</th>
-                <th style={{ padding: '10px', borderBottom: '1px solid #ccc' }}>住職名</th>
-                <th style={{ padding: '10px', borderBottom: '1px solid #ccc', textAlign: 'center' }}>操作</th>
+                <th style={{ padding: '10px', borderBottom: '1px solid #ccc', width: '15%' }}>布教区</th>
+                <th style={{ padding: '10px', borderBottom: '1px solid #ccc', width: '35%' }}>寺院・教会名</th>
+                <th style={{ padding: '10px', borderBottom: '1px solid #ccc', width: '30%' }}>住職・主管名 (クリックで編集)</th>
+                <th style={{ padding: '10px', borderBottom: '1px solid #ccc', textAlign: 'center', width: '20%' }}>操作</th>
               </tr>
             </thead>
             <tbody>
-              {temples.map((temple) => (
+              {filteredTemples.map((temple) => (
                 <tr key={temple.id} style={{ borderBottom: '1px solid #eee' }}>
                   <td style={{ padding: '10px' }}>{temple.region}</td>
-                  <td style={{ padding: '10px' }}>{temple.branches && temple.branches.map(b => `[${b.id}]`).join(' ')}</td>
-                  <td style={{ padding: '10px' }}>{temple.name}</td>
+                  <td style={{ padding: '10px', fontWeight: 'bold' }}>
+                    {temple.name}
+                    {temple.is_church && <span style={{ marginLeft: '8px', fontSize: '11px', background: '#e0f7fa', color: '#006064', padding: '2px 6px', borderRadius: '4px', border: '1px solid #b2ebf2' }}>教会</span>}
+                  </td>
                   <td style={{ padding: '10px', cursor: 'pointer' }}>
                     {editingId === temple.id ? (
                       <input type="text" value={editPriestName} onChange={(e) => setEditPriestName(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && savePriestName(temple.id)} onBlur={() => savePriestName(temple.id)} autoFocus style={{ padding: '4px', width: '90%' }} />
                     ) : (
-                      <div onClick={() => startEditing(temple.id, temple.priest_name)} style={{ padding: '4px', background: '#fcfcfc', border: '1px dashed #ccc', minHeight: '24px' }}>{temple.priest_name || '（未設定）'}</div>
+                      // --- 教会の場合は「主管」、それ以外は「住職」と表示 ---
+                      <div onClick={() => startEditing(temple.id, temple.priest_name)} style={{ padding: '4px', background: '#fcfcfc', border: '1px dashed #ccc', minHeight: '24px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <span style={{ fontSize: '11px', color: '#666', background: '#eee', padding: '2px 4px', borderRadius: '3px' }}>
+                          {temple.is_church ? '主管' : '住職'}
+                        </span>
+                        <span>{temple.priest_name || '（未設定）'}</span>
+                      </div>
                     )}
                   </td>
                   <td style={{ padding: '10px', textAlign: 'center', display: 'flex', gap: '5px', justifyContent: 'center' }}>
@@ -182,10 +202,20 @@ export default function AdminDashboard() {
 
       {activeTab === 'departments' && (
         <>
-          <div style={{ display: 'flex', gap: '10px', marginBottom: '15px', flexWrap: 'wrap' }}>
-            <button onClick={handleExportDepartmentsCSV} style={{ padding: '8px 16px', background: '#007bff', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>↓ 部署CSV出力</button>
-            <input type="file" accept=".csv" ref={deptFileInputRef} onChange={handleImportDepartmentsCSV} style={{ display: 'none' }} />
-            <button onClick={() => deptFileInputRef.current?.click()} style={{ padding: '8px 16px', background: '#ffc107', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>↑ 部署CSV読込</button>
+          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '15px', flexWrap: 'wrap', gap: '15px' }}>
+            <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+              <button onClick={handleExportDepartmentsCSV} style={{ padding: '8px 16px', background: '#007bff', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>↓ 部署CSV出力</button>
+              <input type="file" accept=".csv" ref={deptFileInputRef} onChange={handleImportDepartmentsCSV} style={{ display: 'none' }} />
+              <button onClick={() => deptFileInputRef.current?.click()} style={{ padding: '8px 16px', background: '#ffc107', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>↑ 部署CSV読込</button>
+            </div>
+            {/* --- 部署用の検索窓を追加 --- */}
+            <input 
+              type="text" 
+              placeholder="部署名・電話番号で検索" 
+              value={searchQueryDept} 
+              onChange={(e) => setSearchQueryDept(e.target.value)} 
+              style={{ padding: '8px', width: '300px', border: '1px solid #ccc', borderRadius: '4px' }}
+            />
           </div>
 
           <div style={{ background: '#f8f9fa', padding: '15px', borderRadius: '8px', marginBottom: '20px', border: '1px solid #ddd' }}>
@@ -213,10 +243,10 @@ export default function AdminDashboard() {
               </tr>
             </thead>
             <tbody>
-              {departments.length === 0 ? (
-                <tr><td colSpan={6} style={{ padding: '10px', textAlign: 'center' }}>部署データがありません</td></tr>
+              {filteredDepartments.length === 0 ? (
+                <tr><td colSpan={6} style={{ padding: '10px', textAlign: 'center' }}>データがありません</td></tr>
               ) : (
-                departments.map((dept) => (
+                filteredDepartments.map((dept) => (
                   <tr key={dept.id} style={{ borderBottom: '1px solid #eee' }}>
                     {editingDeptId === dept.id ? (
                       <>

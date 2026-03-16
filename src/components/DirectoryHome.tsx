@@ -10,9 +10,7 @@ export default function DirectoryHome() {
   const [sortedRegions, setSortedRegions] = useState<string[]>([]);
   const [departments, setDepartments] = useState<Department[]>([]);
   
-  // --- 更新日用のState ---
   const [lastUpdated, setLastUpdated] = useState('');
-  
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
@@ -20,7 +18,6 @@ export default function DirectoryHome() {
   useEffect(() => {
     const fetchData = async () => {
       try {
-        // --- 寺院、部署、更新日のデータを並行して取得 ---
         const [templesRes, deptsRes, settingsRes] = await Promise.all([
           supabase.from('temples').select('*'),
           supabase.from('departments').select('*').order('sort_order', { ascending: true }),
@@ -29,7 +26,6 @@ export default function DirectoryHome() {
 
         if (templesRes.error) throw templesRes.error;
         if (deptsRes.error) throw deptsRes.error;
-        // 設定データが見つかればセット
         if (settingsRes.data) setLastUpdated(settingsRes.data.value);
 
         const sortedData = (templesRes.data || []).sort((a, b) => {
@@ -83,7 +79,6 @@ export default function DirectoryHome() {
     );
   });
 
-  // 日付のフォーマット（2026-03-16 を 2026年3月16日 に変換）
   const formatDate = (dateString: string) => {
     if (!dateString) return '';
     const [year, month, day] = dateString.split('-');
@@ -94,7 +89,6 @@ export default function DirectoryHome() {
     <div style={{ padding: '20px', maxWidth: '800px', margin: '0 auto' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', borderBottom: '2px solid #333', paddingBottom: '10px', marginBottom: '20px', flexWrap: 'wrap' }}>
         <h1 style={{ margin: 0 }}>日蓮正宗寺院名簿</h1>
-        {/* --- 更新日の表示 --- */}
         {lastUpdated && (
           <span style={{ fontSize: '14px', color: '#666', fontWeight: 'bold' }}>
             現在の最新版：{formatDate(lastUpdated)} 更新
@@ -201,7 +195,10 @@ export default function DirectoryHome() {
                         {temple.phone ? (<a href={`tel:${temple.phone}`} style={{ color: '#0066cc', textDecoration: 'underline' }}>{temple.phone}</a>) : ('（未登録）')}{' '}
                         / <strong>FAX:</strong> {temple.fax || '（未登録）'}
                       </p>
-                      <p style={{ margin: 0 }}><strong>住職:</strong> {temple.priest_name}</p>
+                      {/* --- 「教会」の場合は「主管」、「寺院」の場合は「住職」と表示 --- */}
+                      <p style={{ margin: 0 }}>
+                        <strong>{temple.is_church ? '主管' : '住職'}:</strong> {temple.priest_name || '（未設定）'}
+                      </p>
                     </div>
                   </div>
                 ))}
