@@ -19,20 +19,38 @@ interface Temple {
   branches: Branch[];
 }
 
+interface Department {
+  id: string;
+  name: string;
+  phone: string;
+  ip_phone: string;
+  fax: string;
+  extension: string;
+  sort_order: number;
+}
+
 export default function DirectoryHome() {
   const [groupedTemples, setGroupedTemples] = useState<Record<string, Temple[]>>({});
   const [sortedRegions, setSortedRegions] = useState<string[]>([]);
+  const [departments, setDepartments] = useState<Department[]>([]);
+  
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
 
   useEffect(() => {
-    const fetchTemples = async () => {
+    const fetchData = async () => {
       try {
-        const { data, error } = await supabase.from('temples').select('*');
-        if (error) throw error;
+        const [templesRes, deptsRes] = await Promise.all([
+          supabase.from('temples').select('*'),
+          supabase.from('departments').select('*').order('sort_order', { ascending: true })
+        ]);
 
-        const sortedData = (data || []).sort((a, b) => {
+        if (templesRes.error) throw templesRes.error;
+        if (deptsRes.error) throw deptsRes.error;
+
+        // --- 寺院データの整理 ---
+        const sortedData = (templesRes.data || []).sort((a, b) => {
           const idA = a.branches && a.branches.length > 0 ? a.branches[0].id : '9999';
           const idB = b.branches && b.branches.length > 0 ? b.branches[0].id : '9999';
           return idA.localeCompare(idB, undefined, { numeric: true, sensitivity: 'base' });
@@ -48,7 +66,6 @@ export default function DirectoryHome() {
         const regionsOrder = Object.keys(grouped).sort((regionA, regionB) => {
           if (regionA === '（布教区未設定）') return 1;
           if (regionB === '（布教区未設定）') return -1;
-
           const idA = grouped[regionA][0].branches?.[0]?.id || '9999';
           const idB = grouped[regionB][0].branches?.[0]?.id || '9999';
           return idA.localeCompare(idB, undefined, { numeric: true, sensitivity: 'base' });
@@ -56,6 +73,10 @@ export default function DirectoryHome() {
 
         setGroupedTemples(grouped);
         setSortedRegions(regionsOrder);
+        
+        // --- 部署データのセット ---
+        setDepartments(deptsRes.data || []);
+
       } catch (err: any) {
         setError(err.message);
       } finally {
@@ -63,7 +84,7 @@ export default function DirectoryHome() {
       }
     };
 
-    fetchTemples();
+    fetchData();
   }, []);
 
   if (loading) return <div style={{ padding: '20px' }}>読み込み中...</div>;
@@ -72,6 +93,16 @@ export default function DirectoryHome() {
   const lowerQuery = searchQuery.toLowerCase();
   const isSearching = searchQuery.trim() !== '';
 
+  const filteredDepartments = departments.filter(dept => {
+    if (!isSearching) return true;
+    return (
+      (dept.name && dept.name.toLowerCase().includes(lowerQuery)) ||
+      (dept.phone && dept.phone.includes(lowerQuery)) ||
+      (dept.ip_phone && dept.ip_phone.includes(lowerQuery)) ||
+      (dept.extension && dept.extension.includes(lowerQuery))
+    );
+  });
+
   return (
     <div style={{ padding: '20px', maxWidth: '800px', margin: '0 auto' }}>
       <h1 style={{ marginBottom: '20px' }}>日蓮正宗寺院名簿</h1>
@@ -79,13 +110,57 @@ export default function DirectoryHome() {
       <div style={{ marginBottom: '20px', padding: '15px', background: '#f5f5f5', borderRadius: '8px' }}>
         <input
           type="text"
-          placeholder="寺院名、住職名、住所、識別番号(1-1等)で検索"
+          placeholder="寺院名、部署名、住所、電話番号などで検索"
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
           style={{ width: '100%', padding: '10px', fontSize: '16px', boxSizing: 'border-box', border: '1px solid #ccc', borderRadius: '4px' }}
         />
       </div>
 
+      {/* --- 総本山 部署一覧セクション（アコーディオン化） --- */}
+      {filteredDepartments.length > 0 && (
+        <div style={{ marginBottom: '30px' }}>
+          <details open={isSearching} style={{ background: '#fff', border: '2px solid #0056b3', borderRadius: '8px', overflow: 'hidden' }}>
+            <summary style={{ padding: '15px', background: '#e6f2ff', fontWeight: 'bold', cursor: 'pointer', fontSize: '18px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', color: '#0056b3' }}>
+              <span>総本山 部署一覧</span>
+              <span style={{ fontSize: '14px', fontWeight: 'normal' }}>
+                ({filteredDepartments.length}件) ▼
+              </span>
+            </summary>
+            
+            <div style={{ padding: '15px', display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '15px', background: '#fafafa' }}>
+              {filteredDepartments.map(dept => (
+                <div key={dept.id} style={{ background: '#fff', border: '1px solid #ddd', borderRadius: '8px', padding: '15px', boxShadow: '0 2px 4px rgba(0,0,0,0.02)' }}>
+                  <h3 style={{ margin: '0 0 10px 0', fontSize: '18px', color: '#000' }}>{dept.name}</h3>
+                  <div style={{ fontSize: '15px', lineHeight: '1.6' }}>
+                    {dept.phone && (
+                      <p style={{ margin: '4px 0' }}>
+                        <strong>外線:</strong> <a href={`tel:${dept.phone}`} style={{ color: '#0066cc', textDecoration: 'underline' }}>{dept.phone}</a>
+                      </p>
+                    )}
+                    {dept.ip_phone && (
+                      <p style={{ margin: '4px 0' }}>
+                        <strong>IP電話:</strong> <a href={`tel:${dept.ip_phone}`} style={{ color: '#0066cc', textDecoration: 'underline' }}>{dept.ip_phone}</a>
+                      </p>
+                    )}
+                    {(dept.fax || dept.extension) && (
+                      <p style={{ margin: '4px 0', display: 'flex', gap: '15px' }}>
+                        {dept.fax && <span><strong>FAX:</strong> {dept.fax}</span>}
+                        {dept.extension && <span><strong>内線:</strong> {dept.extension}</span>}
+                      </p>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </details>
+        </div>
+      )}
+
+      {/* --- 寺院一覧（布教区）セクション --- */}
+      <h2 style={{ fontSize: '20px', borderBottom: '2px solid #555', paddingBottom: '8px', marginBottom: '15px', color: '#333' }}>
+        寺院・教会一覧
+      </h2>
       <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
         {sortedRegions.map(region => {
           const temples = groupedTemples[region];
