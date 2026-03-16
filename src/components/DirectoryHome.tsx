@@ -21,7 +21,7 @@ interface Temple {
 
 export default function DirectoryHome() {
   const [groupedTemples, setGroupedTemples] = useState<Record<string, Temple[]>>({});
-  const [sortedRegions, setSortedRegions] = useState<string[]>([]); // 追加: 布教区の順番を保持するState
+  const [sortedRegions, setSortedRegions] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
@@ -32,14 +32,12 @@ export default function DirectoryHome() {
         const { data, error } = await supabase.from('temples').select('*');
         if (error) throw error;
 
-        // ① 寺院データを識別番号順にソート (1-1, 1-2, 2-1...)
         const sortedData = (data || []).sort((a, b) => {
           const idA = a.branches && a.branches.length > 0 ? a.branches[0].id : '9999';
           const idB = b.branches && b.branches.length > 0 ? b.branches[0].id : '9999';
           return idA.localeCompare(idB, undefined, { numeric: true, sensitivity: 'base' });
         });
 
-        // ② 布教区ごとにグループ化
         const grouped = sortedData.reduce((acc: Record<string, Temple[]>, temple) => {
           const region = temple.region ? temple.region.trim() : '（布教区未設定）';
           if (!acc[region]) acc[region] = [];
@@ -47,9 +45,7 @@ export default function DirectoryHome() {
           return acc;
         }, {});
 
-        // ③ 布教区自体の表示順を決定（各布教区に含まれる寺院の「一番若い識別番号」を基準に並び替え）
         const regionsOrder = Object.keys(grouped).sort((regionA, regionB) => {
-          // 「未設定」グループは一番下に回す
           if (regionA === '（布教区未設定）') return 1;
           if (regionB === '（布教区未設定）') return -1;
 
@@ -91,7 +87,6 @@ export default function DirectoryHome() {
       </div>
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-        {/* Object.entries ではなく、計算された sortedRegions の順番通りに表示する */}
         {sortedRegions.map(region => {
           const temples = groupedTemples[region];
           
@@ -134,8 +129,32 @@ export default function DirectoryHome() {
                     </div>
 
                     <div style={{ fontSize: '0.95em', lineHeight: '1.6' }}>
-                      <p style={{ margin: 0 }}><strong>住所:</strong> 〒{temple.postal_code} {temple.address}</p>
-                      <p style={{ margin: 0 }}><strong>電話:</strong> {temple.phone} / <strong>FAX:</strong> {temple.fax}</p>
+                      <p style={{ margin: '0 0 8px 0' }}>
+                        <strong>住所:</strong> 〒{temple.postal_code}{' '}
+                        {temple.address ? (
+                          <a 
+                            href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(temple.address)}`} 
+                            target="_blank" 
+                            rel="noopener noreferrer"
+                            style={{ color: '#0066cc', textDecoration: 'underline' }}
+                          >
+                            {temple.address}
+                          </a>
+                        ) : (
+                          ''
+                        )}
+                      </p>
+                      <p style={{ margin: '0 0 8px 0' }}>
+                        <strong>電話:</strong>{' '}
+                        {temple.phone ? (
+                          <a href={`tel:${temple.phone}`} style={{ color: '#0066cc', textDecoration: 'underline' }}>
+                            {temple.phone}
+                          </a>
+                        ) : (
+                          '（未登録）'
+                        )}{' '}
+                        / <strong>FAX:</strong> {temple.fax || '（未登録）'}
+                      </p>
                       <p style={{ margin: 0 }}><strong>住職:</strong> {temple.priest_name}</p>
                     </div>
                   </div>
