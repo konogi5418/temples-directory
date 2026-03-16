@@ -37,14 +37,12 @@ export default function AdminDashboard() {
       const { data, error } = await supabase.from('temples').select('*');
       if (error) throw error;
 
-      // 布教区順 → 識別番号順（1-1, 1-2...）にソート
+      // ① 識別番号順 (1-1, 1-2, 2-1...) に並び替え
       const sortedData = (data || []).sort((a, b) => {
-        if (a.region !== b.region) {
-          return (a.region || '').localeCompare(b.region || '', 'ja');
-        }
-        const idA = a.branches && a.branches.length > 0 ? a.branches[0].id : '';
-        const idB = b.branches && b.branches.length > 0 ? b.branches[0].id : '';
-        // 文字列内の数値を認識して自然な順序で並び替え
+        // 識別番号がないレコードは一番下('9999')に回す
+        const idA = a.branches && a.branches.length > 0 ? a.branches[0].id : '9999';
+        const idB = b.branches && b.branches.length > 0 ? b.branches[0].id : '9999';
+        // 数値として自然な順序で比較（1-2 と 1-10 なら 1-2 が先に来るようにする）
         return idA.localeCompare(idB, undefined, { numeric: true, sensitivity: 'base' });
       });
 
@@ -73,7 +71,6 @@ export default function AdminDashboard() {
     navigate('/admin/login');
   };
 
-  // --- 削除機能 ---
   const handleDelete = async (id: string, name: string) => {
     if (!window.confirm(`「${name || '空白のレコード'}」を削除しますか？\nこの操作は元に戻せません。`)) return;
     try {
@@ -88,7 +85,6 @@ export default function AdminDashboard() {
     }
   };
 
-  // --- インライン編集機能（住職名） ---
   const startEditing = (id: string, currentName: string) => {
     setEditingId(id);
     setEditPriestName(currentName || '');
@@ -109,7 +105,6 @@ export default function AdminDashboard() {
     if (e.key === 'Enter') savePriestName(id);
   };
 
-  // --- CSV処理（前回実装部分） ---
   const parseCSVRow = (str: string) => {
     const result = [];
     let curVal = '';
@@ -251,12 +246,8 @@ export default function AdminDashboard() {
                 )}
               </td>
               <td style={{ padding: '10px', textAlign: 'center', display: 'flex', gap: '5px', justifyContent: 'center' }}>
-                <button onClick={() => navigate(`/admin/edit/${temple.id}`)} style={{ padding: '4px 8px', background: '#17a2b8', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '12px' }}>
-                  編集
-                </button>
-                <button onClick={() => handleDelete(temple.id, temple.name)} style={{ padding: '4px 8px', background: '#dc3545', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '12px' }}>
-                  削除
-                </button>
+                <button onClick={() => navigate(`/admin/edit/${temple.id}`)} style={{ padding: '4px 8px', background: '#17a2b8', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '12px' }}>編集</button>
+                <button onClick={() => handleDelete(temple.id, temple.name)} style={{ padding: '4px 8px', background: '#dc3545', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '12px' }}>削除</button>
               </td>
             </tr>
           ))}

@@ -21,6 +21,7 @@ interface Temple {
 
 export default function DirectoryHome() {
   const [groupedTemples, setGroupedTemples] = useState<Record<string, Temple[]>>({});
+  const [sortedRegions, setSortedRegions] = useState<string[]>([]); // 追加: 布教区の順番を保持するState
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
@@ -31,26 +32,34 @@ export default function DirectoryHome() {
         const { data, error } = await supabase.from('temples').select('*');
         if (error) throw error;
 
-        // 布教区順 → 識別番号順にソート
+        // ① 寺院データを識別番号順にソート (1-1, 1-2, 2-1...)
         const sortedData = (data || []).sort((a, b) => {
-          if (a.region !== b.region) {
-            return (a.region || '').localeCompare(b.region || '', 'ja');
-          }
-          const idA = a.branches && a.branches.length > 0 ? a.branches[0].id : '';
-          const idB = b.branches && b.branches.length > 0 ? b.branches[0].id : '';
+          const idA = a.branches && a.branches.length > 0 ? a.branches[0].id : '9999';
+          const idB = b.branches && b.branches.length > 0 ? b.branches[0].id : '9999';
           return idA.localeCompare(idB, undefined, { numeric: true, sensitivity: 'base' });
         });
 
-        // 取得したデータを布教区ごとにグループ化する
+        // ② 布教区ごとにグループ化
         const grouped = sortedData.reduce((acc: Record<string, Temple[]>, temple) => {
-          // 空白レコードの場合は「未設定」グループに入れる
           const region = temple.region ? temple.region.trim() : '（布教区未設定）';
           if (!acc[region]) acc[region] = [];
           acc[region].push(temple);
           return acc;
         }, {});
 
+        // ③ 布教区自体の表示順を決定（各布教区に含まれる寺院の「一番若い識別番号」を基準に並び替え）
+        const regionsOrder = Object.keys(grouped).sort((regionA, regionB) => {
+          // 「未設定」グループは一番下に回す
+          if (regionA === '（布教区未設定）') return 1;
+          if (regionB === '（布教区未設定）') return -1;
+
+          const idA = grouped[regionA][0].branches?.[0]?.id || '9999';
+          const idB = grouped[regionB][0].branches?.[0]?.id || '9999';
+          return idA.localeCompare(idB, undefined, { numeric: true, sensitivity: 'base' });
+        });
+
         setGroupedTemples(grouped);
+        setSortedRegions(regionsOrder);
       } catch (err: any) {
         setError(err.message);
       } finally {
@@ -71,7 +80,6 @@ export default function DirectoryHome() {
     <div style={{ padding: '20px', maxWidth: '800px', margin: '0 auto' }}>
       <h1 style={{ marginBottom: '20px' }}>日蓮正宗寺院名簿</h1>
 
-      {/* 検索フォーム */}
       <div style={{ marginBottom: '20px', padding: '15px', background: '#f5f5f5', borderRadius: '8px' }}>
         <input
           type="text"
@@ -82,11 +90,11 @@ export default function DirectoryHome() {
         />
       </div>
 
-      {/* 布教区ごとのアコーディオン表示 */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-        {Object.entries(groupedTemples).map(([region, temples]) => {
+        {/* Object.entries ではなく、計算された sortedRegions の順番通りに表示する */}
+        {sortedRegions.map(region => {
+          const temples = groupedTemples[region];
           
-          // 検索語がある場合、条件に一致する寺院のみに絞り込む
           const filteredTemples = temples.filter(temple => {
             if (!isSearching) return true;
             return (
@@ -98,11 +106,9 @@ export default function DirectoryHome() {
             );
           });
 
-          // 検索時にその布教区に該当寺院が0件の場合は、布教区自体を非表示にする
           if (isSearching && filteredTemples.length === 0) return null;
 
           return (
-            // detailsタグに open={isSearching} を付与することで、検索中は自動で展開される
             <details key={region} open={isSearching} style={{ background: '#fff', border: '1px solid #ddd', borderRadius: '8px', overflow: 'hidden' }}>
               <summary style={{ padding: '15px', background: '#e3f2fd', fontWeight: 'bold', cursor: 'pointer', fontSize: '18px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <span>{region}</span>
@@ -111,7 +117,6 @@ export default function DirectoryHome() {
                 </span>
               </summary>
               
-              {/* 展開される寺院一覧 */}
               <div style={{ padding: '15px', display: 'flex', flexDirection: 'column', gap: '15px', background: '#fafafa' }}>
                 {filteredTemples.map(temple => (
                   <div key={temple.id} style={{ border: '1px solid #ccc', padding: '15px', borderRadius: '8px', background: '#fff' }}>
