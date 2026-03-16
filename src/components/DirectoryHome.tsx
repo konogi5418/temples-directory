@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase';
 
 interface Branch { id: string; name: string; }
-interface Temple { id: string; name: string; region: string; postal_code: string; address: string; phone: string; fax: string; priest_name: string; is_church: boolean; branches: Branch[]; }
+interface Temple { id: string; name: string; region: string; postal_code: string; address: string; phone: string; fax: string; priest_name: string; acting_priest?: string; vice_priest?: string; resident_priests?: string; is_church: boolean; branches: Branch[]; }
 interface Department { id: string; name: string; phone: string; ip_phone: string; fax: string; extension: string; sort_order: number; }
 
 export default function DirectoryHome() {
@@ -99,7 +99,7 @@ export default function DirectoryHome() {
       <div style={{ marginBottom: '20px', padding: '15px', background: '#f5f5f5', borderRadius: '8px' }}>
         <input
           type="text"
-          placeholder="寺院名、部署名、住所、電話番号などで検索"
+          placeholder="寺院名、役職者名、住所、電話番号などで検索"
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
           style={{ width: '100%', padding: '10px', fontSize: '16px', boxSizing: 'border-box', border: '1px solid #ccc', borderRadius: '4px' }}
@@ -111,11 +111,8 @@ export default function DirectoryHome() {
           <details open={isSearching} style={{ background: '#fff', border: '2px solid #0056b3', borderRadius: '8px', overflow: 'hidden' }}>
             <summary style={{ padding: '15px', background: '#e6f2ff', fontWeight: 'bold', cursor: 'pointer', fontSize: '18px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', color: '#0056b3' }}>
               <span>総本山 部署一覧</span>
-              <span style={{ fontSize: '14px', fontWeight: 'normal' }}>
-                ({filteredDepartments.length}件) ▼
-              </span>
+              <span style={{ fontSize: '14px', fontWeight: 'normal' }}>({filteredDepartments.length}件) ▼</span>
             </summary>
-            
             <div style={{ padding: '15px', display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '15px', background: '#fafafa' }}>
               {filteredDepartments.map(dept => (
                 <div key={dept.id} style={{ background: '#fff', border: '1px solid #ddd', borderRadius: '8px', padding: '15px', boxShadow: '0 2px 4px rgba(0,0,0,0.02)' }}>
@@ -149,6 +146,9 @@ export default function DirectoryHome() {
               (temple.name && temple.name.toLowerCase().includes(lowerQuery)) ||
               (temple.address && temple.address.toLowerCase().includes(lowerQuery)) ||
               (temple.priest_name && temple.priest_name.toLowerCase().includes(lowerQuery)) ||
+              (temple.acting_priest && temple.acting_priest.toLowerCase().includes(lowerQuery)) ||
+              (temple.vice_priest && temple.vice_priest.toLowerCase().includes(lowerQuery)) ||
+              (temple.resident_priests && temple.resident_priests.toLowerCase().includes(lowerQuery)) ||
               (temple.phone && temple.phone.includes(lowerQuery)) ||
               (temple.branches && temple.branches.some(b => b.id.toLowerCase().includes(lowerQuery) || b.name.toLowerCase().includes(lowerQuery)))
             );
@@ -160,9 +160,7 @@ export default function DirectoryHome() {
             <details key={region} open={isSearching} style={{ background: '#fff', border: '1px solid #ddd', borderRadius: '8px', overflow: 'hidden' }}>
               <summary style={{ padding: '15px', background: '#e3f2fd', fontWeight: 'bold', cursor: 'pointer', fontSize: '18px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <span>{region}</span>
-                <span style={{ fontSize: '14px', fontWeight: 'normal', color: '#555' }}>
-                  ({filteredTemples.length}件) ▼
-                </span>
+                <span style={{ fontSize: '14px', fontWeight: 'normal', color: '#555' }}>({filteredTemples.length}件) ▼</span>
               </summary>
               
               <div style={{ padding: '15px', display: 'flex', flexDirection: 'column', gap: '15px', background: '#fafafa' }}>
@@ -185,20 +183,49 @@ export default function DirectoryHome() {
                       <p style={{ margin: '0 0 8px 0' }}>
                         <strong>住所:</strong> 〒{temple.postal_code}{' '}
                         {temple.address ? (
-                          <a href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(temple.address)}`} target="_blank" rel="noopener noreferrer" style={{ color: '#0066cc', textDecoration: 'underline' }}>
-                            {temple.address}
-                          </a>
+                          <a href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(temple.address)}`} target="_blank" rel="noopener noreferrer" style={{ color: '#0066cc', textDecoration: 'underline' }}>{temple.address}</a>
                         ) : ('')}
                       </p>
-                      <p style={{ margin: '0 0 8px 0' }}>
-                        <strong>電話:</strong>{' '}
-                        {temple.phone ? (<a href={`tel:${temple.phone}`} style={{ color: '#0066cc', textDecoration: 'underline' }}>{temple.phone}</a>) : ('（未登録）')}{' '}
-                        / <strong>FAX:</strong> {temple.fax || '（未登録）'}
+                      <p style={{ margin: '0 0 12px 0' }}>
+                        <strong>電話:</strong> {temple.phone ? (<a href={`tel:${temple.phone}`} style={{ color: '#0066cc', textDecoration: 'underline' }}>{temple.phone}</a>) : ('（未登録）')} / <strong>FAX:</strong> {temple.fax || '（未登録）'}
                       </p>
-                      {/* --- 「教会」の場合は「主管」、「寺院」の場合は「住職」と表示 --- */}
-                      <p style={{ margin: 0 }}>
-                        <strong>{temple.is_church ? '主管' : '住職'}:</strong> {temple.priest_name || '（未設定）'}
-                      </p>
+                      
+                      {/* --- 役職者の表示エリア（優先順位順） --- */}
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', background: '#f8f9fa', padding: '10px', borderRadius: '6px', border: '1px solid #eee' }}>
+                        
+                        {/* 1. 住職・主管 */}
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          <span style={{ fontSize: '11px', fontWeight: 'bold', color: '#fff', background: '#343a40', padding: '2px 6px', borderRadius: '3px', width: '36px', textAlign: 'center' }}>
+                            {temple.is_church ? '主管' : '住職'}
+                          </span>
+                          <span>{temple.priest_name || '（未設定）'}</span>
+                        </div>
+                        
+                        {/* 2. 代務者 */}
+                        {temple.acting_priest && (
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <span style={{ fontSize: '11px', fontWeight: 'bold', color: '#fff', background: '#6c757d', padding: '2px 6px', borderRadius: '3px', width: '36px', textAlign: 'center' }}>代務</span>
+                            <span>{temple.acting_priest}</span>
+                          </div>
+                        )}
+
+                        {/* 3. 副住職 */}
+                        {temple.vice_priest && (
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <span style={{ fontSize: '11px', fontWeight: 'bold', color: '#fff', background: '#adb5bd', padding: '2px 6px', borderRadius: '3px', width: '36px', textAlign: 'center' }}>副住職</span>
+                            <span>{temple.vice_priest}</span>
+                          </div>
+                        )}
+
+                        {/* 4. 在勤者 */}
+                        {temple.resident_priests && (
+                          <div style={{ display: 'flex', alignItems: 'flex-start', gap: '8px' }}>
+                            <span style={{ fontSize: '11px', fontWeight: 'bold', color: '#495057', background: '#e9ecef', border: '1px solid #ced4da', padding: '1px 5px', borderRadius: '3px', width: '36px', textAlign: 'center', marginTop: '2px' }}>在勤</span>
+                            <span>{temple.resident_priests}</span>
+                          </div>
+                        )}
+                        
+                      </div>
                     </div>
                   </div>
                 ))}

@@ -2,165 +2,154 @@ import { useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 
+interface Branch { id: string; name: string; }
+
 export default function AdminEditTemple() {
-  const { id } = useParams(); // URLから寺院のIDを取得
+  const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState('');
+  
+  const [formData, setFormData] = useState({
+    name: '', region: '', postal_code: '', address: '', phone: '', fax: '',
+    priest_name: '', acting_priest: '', vice_priest: '', resident_priests: '',
+    is_church: false, branches: [{ id: '', name: '' }] as Branch[]
+  });
 
-  // フォームのState
-  const [name, setName] = useState('');
-  const [region, setRegion] = useState('');
-  const [postalCode, setPostalCode] = useState('');
-  const [address, setAddress] = useState('');
-  const [phone, setPhone] = useState('');
-  const [fax, setFax] = useState('');
-  const [priestName, setPriestName] = useState('');
-  const [isChurch, setIsChurch] = useState(false);
-  const [branches, setBranches] = useState<{id: string, name: string}[]>([]);
-
-  // 初回レンダリング時に既存データを取得
   useEffect(() => {
     const fetchTemple = async () => {
-      try {
-        const { data, error } = await supabase
-          .from('temples')
-          .select('*')
-          .eq('id', id)
-          .single();
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) { navigate('/admin/login'); return; }
+      if (!id) return;
 
+      try {
+        const { data, error } = await supabase.from('temples').select('*').eq('id', id).single();
         if (error) throw error;
         if (data) {
-          setName(data.name || '');
-          setRegion(data.region || '');
-          setPostalCode(data.postal_code || '');
-          setAddress(data.address || '');
-          setPhone(data.phone || '');
-          setFax(data.fax || '');
-          setPriestName(data.priest_name || '');
-          setIsChurch(data.is_church || false);
-          setBranches(data.branches || []);
+          setFormData({
+            name: data.name || '', region: data.region || '', postal_code: data.postal_code || '', address: data.address || '', phone: data.phone || '', fax: data.fax || '',
+            priest_name: data.priest_name || '', acting_priest: data.acting_priest || '', vice_priest: data.vice_priest || '', resident_priests: data.resident_priests || '',
+            is_church: data.is_church || false, branches: data.branches && data.branches.length > 0 ? data.branches : [{ id: '', name: '' }]
+          });
         }
-      } catch (err: any) {
-        setError(err.message);
-      } finally {
-        setLoading(false);
-      }
+      } catch (err: any) { alert(`データ取得エラー: ${err.message}`); navigate('/admin'); } finally { setLoading(false); }
     };
+    fetchTemple();
+  }, [id, navigate]);
 
-    if (id) fetchTemple();
-  }, [id]);
-
-  // 支部の操作関数
-  const addBranch = () => setBranches([...branches, { id: '', name: '' }]);
-  const updateBranch = (index: number, field: 'id' | 'name', value: string) => {
-    const newBranches = [...branches];
-    newBranches[index][field] = value;
-    setBranches(newBranches);
-  };
-  const removeBranch = (index: number) => setBranches(branches.filter((_, i) => i !== index));
-
-  // データ更新処理
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setSaving(true);
-    setError('');
-
-    const validBranches = branches.filter(b => b.id.trim() !== '' || b.name.trim() !== '');
-
+    if (!formData.name) return alert('寺院・教会名は必須です');
     try {
-      const { error: updateError } = await supabase
-        .from('temples')
-        .update({
-          name,
-          region,
-          postal_code: postalCode,
-          address,
-          phone,
-          fax,
-          priest_name: priestName,
-          is_church: isChurch,
-          branches: validBranches,
-        })
-        .eq('id', id);
+      setLoading(true);
+      const { error } = await supabase.from('temples').update(formData).eq('id', id);
+      if (error) throw error;
+      alert('更新が完了しました。');
+      navigate('/admin');
+    } catch (err: any) { alert(`更新エラー: ${err.message}`); } finally { setLoading(false); }
+  };
 
-      if (updateError) throw updateError;
-      navigate('/admin'); // 保存成功後、ダッシュボードへ戻る
-    } catch (err: any) {
-      setError(err.message);
-      setSaving(false);
-    }
+  const handleBranchChange = (index: number, field: keyof Branch, value: string) => {
+    const newBranches = [...formData.branches];
+    newBranches[index] = { ...newBranches[index], [field]: value };
+    setFormData({ ...formData, branches: newBranches });
+  };
+  const addBranch = () => setFormData({ ...formData, branches: [...formData.branches, { id: '', name: '' }] });
+  const removeBranch = (index: number) => {
+    const newBranches = formData.branches.filter((_, i) => i !== index);
+    setFormData({ ...formData, branches: newBranches });
   };
 
   if (loading) return <div style={{ padding: '20px' }}>読み込み中...</div>;
 
   return (
-    <div style={{ padding: '20px', maxWidth: '600px', margin: '0 auto' }}>
+    <div style={{ padding: '20px', maxWidth: '800px', margin: '0 auto' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
-        <h2>寺院データの編集</h2>
-        <button onClick={() => navigate('/admin')} style={{ padding: '8px 16px', cursor: 'pointer' }}>キャンセル</button>
+        <h2>データ編集</h2>
+        <button onClick={() => navigate('/admin')} style={{ padding: '8px 16px', cursor: 'pointer' }}>戻る</button>
       </div>
 
       <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
         <div>
-          <label style={{ display: 'block', marginBottom: '5px' }}>寺院名 (必須)</label>
-          <input type="text" value={name} onChange={(e) => setName(e.target.value)} required style={{ width: '100%', padding: '8px', boxSizing: 'border-box' }} />
-        </div>
-        
-        <div>
-          <label style={{ display: 'block', marginBottom: '5px' }}>教会ですか？</label>
-          <input type="checkbox" checked={isChurch} onChange={(e) => setIsChurch(e.target.checked)} /> はい
+          <label style={{ display: 'flex', alignItems: 'center', gap: '10px', fontWeight: 'bold', cursor: 'pointer', background: '#f8f9fa', padding: '10px', borderRadius: '4px', border: '1px solid #ccc' }}>
+            <input type="checkbox" checked={formData.is_church} onChange={(e) => setFormData({ ...formData, is_church: e.target.checked })} style={{ transform: 'scale(1.2)' }} />
+            この施設は「教会」である
+          </label>
         </div>
 
         <div>
-          <label style={{ display: 'block', marginBottom: '5px' }}>布教区 (必須)</label>
-          <input type="text" value={region} onChange={(e) => setRegion(e.target.value)} required placeholder="例: 東京第一" style={{ width: '100%', padding: '8px', boxSizing: 'border-box' }} />
+          <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold' }}>布教区</label>
+          <input type="text" value={formData.region} onChange={e => setFormData({...formData, region: e.target.value})} style={{ width: '100%', padding: '8px', boxSizing: 'border-box' }} />
+        </div>
+
+        <div>
+          <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold' }}>寺院・教会名 (必須)</label>
+          <input type="text" value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} required style={{ width: '100%', padding: '8px', boxSizing: 'border-box' }} />
+        </div>
+
+        {/* 役職者の入力欄 */}
+        <div style={{ background: '#f0f8ff', padding: '15px', borderRadius: '4px', border: '1px solid #b8daff', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+          <h3 style={{ margin: '0 0 10px 0', fontSize: '16px', color: '#004085' }}>役職者情報</h3>
+          <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+            <div style={{ flex: '1 1 45%' }}>
+              <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold' }}>{formData.is_church ? '主管名' : '住職名'} (優先1)</label>
+              <input type="text" value={formData.priest_name} onChange={e => setFormData({...formData, priest_name: e.target.value})} style={{ width: '100%', padding: '8px', boxSizing: 'border-box' }} />
+            </div>
+            <div style={{ flex: '1 1 45%' }}>
+              <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold' }}>代務者 (優先2)</label>
+              <input type="text" value={formData.acting_priest} onChange={e => setFormData({...formData, acting_priest: e.target.value})} style={{ width: '100%', padding: '8px', boxSizing: 'border-box' }} />
+            </div>
+          </div>
+          <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+            <div style={{ flex: '1 1 45%' }}>
+              <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold' }}>副住職 (優先3)</label>
+              <input type="text" value={formData.vice_priest} onChange={e => setFormData({...formData, vice_priest: e.target.value})} style={{ width: '100%', padding: '8px', boxSizing: 'border-box' }} />
+            </div>
+            <div style={{ flex: '1 1 45%' }}>
+              <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold' }}>在勤者 (優先4・複数可)</label>
+              <input type="text" value={formData.resident_priests} onChange={e => setFormData({...formData, resident_priests: e.target.value})} placeholder="例: 山田太郎, 鈴木次郎" style={{ width: '100%', padding: '8px', boxSizing: 'border-box' }} />
+            </div>
+          </div>
         </div>
 
         <div style={{ display: 'flex', gap: '10px' }}>
           <div style={{ flex: 1 }}>
-            <label style={{ display: 'block', marginBottom: '5px' }}>郵便番号</label>
-            <input type="text" value={postalCode} onChange={(e) => setPostalCode(e.target.value)} placeholder="例: 100-0000" style={{ width: '100%', padding: '8px', boxSizing: 'border-box' }} />
-          </div>
-          <div style={{ flex: 2 }}>
-            <label style={{ display: 'block', marginBottom: '5px' }}>住所</label>
-            <input type="text" value={address} onChange={(e) => setAddress(e.target.value)} style={{ width: '100%', padding: '8px', boxSizing: 'border-box' }} />
-          </div>
-        </div>
-
-        <div style={{ display: 'flex', gap: '10px' }}>
-          <div style={{ flex: 1 }}>
-            <label style={{ display: 'block', marginBottom: '5px' }}>電話番号</label>
-            <input type="text" value={phone} onChange={(e) => setPhone(e.target.value)} style={{ width: '100%', padding: '8px', boxSizing: 'border-box' }} />
-          </div>
-          <div style={{ flex: 1 }}>
-            <label style={{ display: 'block', marginBottom: '5px' }}>FAX番号</label>
-            <input type="text" value={fax} onChange={(e) => setFax(e.target.value)} style={{ width: '100%', padding: '8px', boxSizing: 'border-box' }} />
+            <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold' }}>郵便番号</label>
+            <input type="text" value={formData.postal_code} onChange={e => setFormData({...formData, postal_code: e.target.value})} style={{ width: '100%', padding: '8px', boxSizing: 'border-box' }} />
           </div>
         </div>
 
         <div>
-          <label style={{ display: 'block', marginBottom: '5px' }}>住職名</label>
-          <input type="text" value={priestName} onChange={(e) => setPriestName(e.target.value)} style={{ width: '100%', padding: '8px', boxSizing: 'border-box' }} />
+          <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold' }}>住所</label>
+          <input type="text" value={formData.address} onChange={e => setFormData({...formData, address: e.target.value})} style={{ width: '100%', padding: '8px', boxSizing: 'border-box' }} />
         </div>
 
-        <div style={{ border: '1px solid #ccc', padding: '15px', borderRadius: '4px', background: '#f9f9f9' }}>
-          <h3 style={{ margin: '0 0 10px 0', fontSize: '16px' }}>識別番号と支部設定</h3>
-          {branches.map((branch, index) => (
-            <div key={index} style={{ display: 'flex', gap: '10px', marginBottom: '10px', alignItems: 'center' }}>
-              <input type="text" value={branch.id} onChange={(e) => updateBranch(index, 'id', e.target.value)} placeholder="識別番号 (例: 1-1)" style={{ flex: 1, padding: '8px', boxSizing: 'border-box' }} />
-              <input type="text" value={branch.name} onChange={(e) => updateBranch(index, 'name', e.target.value)} placeholder="支部名" style={{ flex: 2, padding: '8px', boxSizing: 'border-box' }} />
-              <button type="button" onClick={() => removeBranch(index)} style={{ padding: '8px', color: 'red', cursor: 'pointer' }}>削除</button>
+        <div style={{ display: 'flex', gap: '10px' }}>
+          <div style={{ flex: 1 }}>
+            <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold' }}>電話番号</label>
+            <input type="text" value={formData.phone} onChange={e => setFormData({...formData, phone: e.target.value})} style={{ width: '100%', padding: '8px', boxSizing: 'border-box' }} />
+          </div>
+          <div style={{ flex: 1 }}>
+            <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold' }}>FAX番号</label>
+            <input type="text" value={formData.fax} onChange={e => setFormData({...formData, fax: e.target.value})} style={{ width: '100%', padding: '8px', boxSizing: 'border-box' }} />
+          </div>
+        </div>
+
+        <div style={{ background: '#f5f5f5', padding: '15px', borderRadius: '4px', border: '1px solid #ddd' }}>
+          <label style={{ display: 'block', marginBottom: '10px', fontWeight: 'bold' }}>識別番号・支部情報</label>
+          {formData.branches.map((branch, index) => (
+            <div key={index} style={{ display: 'flex', gap: '10px', marginBottom: '10px' }}>
+              <input type="text" placeholder="識別番号" value={branch.id} onChange={e => handleBranchChange(index, 'id', e.target.value)} style={{ flex: 1, padding: '8px' }} />
+              <input type="text" placeholder="支部名" value={branch.name} onChange={e => handleBranchChange(index, 'name', e.target.value)} style={{ flex: 2, padding: '8px' }} />
+              {formData.branches.length > 1 && (
+                <button type="button" onClick={() => removeBranch(index)} style={{ padding: '8px', background: '#dc3545', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>削除</button>
+              )}
             </div>
           ))}
-          <button type="button" onClick={addBranch} style={{ padding: '8px 16px', cursor: 'pointer' }}>+ 識別番号を追加</button>
+          <button type="button" onClick={addBranch} style={{ padding: '8px 16px', background: '#6c757d', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>+ 識別番号を追加</button>
         </div>
 
-        {error && <p style={{ color: 'red' }}>{error}</p>}
-        
-        <button type="submit" disabled={saving} style={{ padding: '12px', fontSize: '16px', background: '#0056b3', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer', marginTop: '10px' }}>
-          {saving ? '保存中...' : '変更を保存する'}
+        <button type="submit" disabled={loading} style={{ padding: '12px', background: '#17a2b8', color: 'white', border: 'none', borderRadius: '4px', fontSize: '16px', cursor: loading ? 'not-allowed' : 'pointer', marginTop: '10px' }}>
+          {loading ? '更新中...' : '変更を保存する'}
         </button>
       </form>
     </div>
