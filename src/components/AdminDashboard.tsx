@@ -47,7 +47,7 @@ export default function AdminDashboard() {
 
   // --- 更新日の取得 ---
   const fetchSettings = async () => {
-    const { data, error } = await supabase.from('app_settings').select('value').eq('key', 'last_updated').single();
+    const { data } = await supabase.from('app_settings').select('value').eq('key', 'last_updated').single();
     if (data) setLastUpdated(data.value);
   };
 
