@@ -1,38 +1,17 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase';
 
-interface Branch {
-  id: string;
-  name: string;
-}
-
-interface Temple {
-  id: string;
-  name: string;
-  region: string;
-  postal_code: string;
-  address: string;
-  phone: string;
-  fax: string;
-  priest_name: string;
-  is_church: boolean;
-  branches: Branch[];
-}
-
-interface Department {
-  id: string;
-  name: string;
-  phone: string;
-  ip_phone: string;
-  fax: string;
-  extension: string;
-  sort_order: number;
-}
+interface Branch { id: string; name: string; }
+interface Temple { id: string; name: string; region: string; postal_code: string; address: string; phone: string; fax: string; priest_name: string; is_church: boolean; branches: Branch[]; }
+interface Department { id: string; name: string; phone: string; ip_phone: string; fax: string; extension: string; sort_order: number; }
 
 export default function DirectoryHome() {
   const [groupedTemples, setGroupedTemples] = useState<Record<string, Temple[]>>({});
   const [sortedRegions, setSortedRegions] = useState<string[]>([]);
   const [departments, setDepartments] = useState<Department[]>([]);
+  
+  // --- 更新日用のState ---
+  const [lastUpdated, setLastUpdated] = useState('');
   
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -41,15 +20,18 @@ export default function DirectoryHome() {
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const [templesRes, deptsRes] = await Promise.all([
+        // --- 寺院、部署、更新日のデータを並行して取得 ---
+        const [templesRes, deptsRes, settingsRes] = await Promise.all([
           supabase.from('temples').select('*'),
-          supabase.from('departments').select('*').order('sort_order', { ascending: true })
+          supabase.from('departments').select('*').order('sort_order', { ascending: true }),
+          supabase.from('app_settings').select('value').eq('key', 'last_updated').single()
         ]);
 
         if (templesRes.error) throw templesRes.error;
         if (deptsRes.error) throw deptsRes.error;
+        // 設定データが見つかればセット
+        if (settingsRes.data) setLastUpdated(settingsRes.data.value);
 
-        // --- 寺院データの整理 ---
         const sortedData = (templesRes.data || []).sort((a, b) => {
           const idA = a.branches && a.branches.length > 0 ? a.branches[0].id : '9999';
           const idB = b.branches && b.branches.length > 0 ? b.branches[0].id : '9999';
@@ -73,8 +55,6 @@ export default function DirectoryHome() {
 
         setGroupedTemples(grouped);
         setSortedRegions(regionsOrder);
-        
-        // --- 部署データのセット ---
         setDepartments(deptsRes.data || []);
 
       } catch (err: any) {
@@ -103,9 +83,24 @@ export default function DirectoryHome() {
     );
   });
 
+  // 日付のフォーマット（2026-03-16 を 2026年3月16日 に変換）
+  const formatDate = (dateString: string) => {
+    if (!dateString) return '';
+    const [year, month, day] = dateString.split('-');
+    return `${year}年${parseInt(month)}月${parseInt(day)}日`;
+  };
+
   return (
     <div style={{ padding: '20px', maxWidth: '800px', margin: '0 auto' }}>
-      <h1 style={{ marginBottom: '20px' }}>日蓮正宗寺院名簿</h1>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', borderBottom: '2px solid #333', paddingBottom: '10px', marginBottom: '20px', flexWrap: 'wrap' }}>
+        <h1 style={{ margin: 0 }}>日蓮正宗寺院名簿</h1>
+        {/* --- 更新日の表示 --- */}
+        {lastUpdated && (
+          <span style={{ fontSize: '14px', color: '#666', fontWeight: 'bold' }}>
+            現在の最新版：{formatDate(lastUpdated)} 更新
+          </span>
+        )}
+      </div>
 
       <div style={{ marginBottom: '20px', padding: '15px', background: '#f5f5f5', borderRadius: '8px' }}>
         <input
@@ -117,7 +112,6 @@ export default function DirectoryHome() {
         />
       </div>
 
-      {/* --- 総本山 部署一覧セクション（アコーディオン化） --- */}
       {filteredDepartments.length > 0 && (
         <div style={{ marginBottom: '30px' }}>
           <details open={isSearching} style={{ background: '#fff', border: '2px solid #0056b3', borderRadius: '8px', overflow: 'hidden' }}>
@@ -133,16 +127,8 @@ export default function DirectoryHome() {
                 <div key={dept.id} style={{ background: '#fff', border: '1px solid #ddd', borderRadius: '8px', padding: '15px', boxShadow: '0 2px 4px rgba(0,0,0,0.02)' }}>
                   <h3 style={{ margin: '0 0 10px 0', fontSize: '18px', color: '#000' }}>{dept.name}</h3>
                   <div style={{ fontSize: '15px', lineHeight: '1.6' }}>
-                    {dept.phone && (
-                      <p style={{ margin: '4px 0' }}>
-                        <strong>外線:</strong> <a href={`tel:${dept.phone}`} style={{ color: '#0066cc', textDecoration: 'underline' }}>{dept.phone}</a>
-                      </p>
-                    )}
-                    {dept.ip_phone && (
-                      <p style={{ margin: '4px 0' }}>
-                        <strong>IP電話:</strong> <a href={`tel:${dept.ip_phone}`} style={{ color: '#0066cc', textDecoration: 'underline' }}>{dept.ip_phone}</a>
-                      </p>
-                    )}
+                    {dept.phone && <p style={{ margin: '4px 0' }}><strong>外線:</strong> <a href={`tel:${dept.phone}`} style={{ color: '#0066cc', textDecoration: 'underline' }}>{dept.phone}</a></p>}
+                    {dept.ip_phone && <p style={{ margin: '4px 0' }}><strong>IP電話:</strong> <a href={`tel:${dept.ip_phone}`} style={{ color: '#0066cc', textDecoration: 'underline' }}>{dept.ip_phone}</a></p>}
                     {(dept.fax || dept.extension) && (
                       <p style={{ margin: '4px 0', display: 'flex', gap: '15px' }}>
                         {dept.fax && <span><strong>FAX:</strong> {dept.fax}</span>}
@@ -157,14 +143,12 @@ export default function DirectoryHome() {
         </div>
       )}
 
-      {/* --- 寺院一覧（布教区）セクション --- */}
       <h2 style={{ fontSize: '20px', borderBottom: '2px solid #555', paddingBottom: '8px', marginBottom: '15px', color: '#333' }}>
         寺院・教会一覧
       </h2>
       <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
         {sortedRegions.map(region => {
           const temples = groupedTemples[region];
-          
           const filteredTemples = temples.filter(temple => {
             if (!isSearching) return true;
             return (
@@ -207,27 +191,14 @@ export default function DirectoryHome() {
                       <p style={{ margin: '0 0 8px 0' }}>
                         <strong>住所:</strong> 〒{temple.postal_code}{' '}
                         {temple.address ? (
-                          <a 
-                            href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(temple.address)}`} 
-                            target="_blank" 
-                            rel="noopener noreferrer"
-                            style={{ color: '#0066cc', textDecoration: 'underline' }}
-                          >
+                          <a href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(temple.address)}`} target="_blank" rel="noopener noreferrer" style={{ color: '#0066cc', textDecoration: 'underline' }}>
                             {temple.address}
                           </a>
-                        ) : (
-                          ''
-                        )}
+                        ) : ('')}
                       </p>
                       <p style={{ margin: '0 0 8px 0' }}>
                         <strong>電話:</strong>{' '}
-                        {temple.phone ? (
-                          <a href={`tel:${temple.phone}`} style={{ color: '#0066cc', textDecoration: 'underline' }}>
-                            {temple.phone}
-                          </a>
-                        ) : (
-                          '（未登録）'
-                        )}{' '}
+                        {temple.phone ? (<a href={`tel:${temple.phone}`} style={{ color: '#0066cc', textDecoration: 'underline' }}>{temple.phone}</a>) : ('（未登録）')}{' '}
                         / <strong>FAX:</strong> {temple.fax || '（未登録）'}
                       </p>
                       <p style={{ margin: 0 }}><strong>住職:</strong> {temple.priest_name}</p>

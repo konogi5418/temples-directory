@@ -2,33 +2,9 @@ import { useEffect, useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 
-interface Branch {
-  id: string;
-  name: string;
-}
-
-interface Temple {
-  id: string;
-  name: string;
-  region: string;
-  postal_code?: string;
-  address?: string;
-  phone?: string;
-  fax?: string;
-  priest_name: string;
-  is_church: boolean;
-  branches: Branch[];
-}
-
-interface Department {
-  id: string;
-  name: string;
-  phone: string;
-  ip_phone: string;
-  fax: string;
-  extension: string;
-  sort_order: number;
-}
+interface Branch { id: string; name: string; }
+interface Temple { id: string; name: string; region: string; postal_code?: string; address?: string; phone?: string; fax?: string; priest_name: string; is_church: boolean; branches: Branch[]; }
+interface Department { id: string; name: string; phone: string; ip_phone: string; fax: string; extension: string; sort_order: number; }
 
 export default function AdminDashboard() {
   const [activeTab, setActiveTab] = useState<'temples' | 'departments'>('temples');
@@ -39,10 +15,11 @@ export default function AdminDashboard() {
   
   const [departments, setDepartments] = useState<Department[]>([]);
   const [newDept, setNewDept] = useState<Partial<Department>>({ name: '', phone: '', ip_phone: '', fax: '', extension: '', sort_order: 0 });
-  
-  // --- 部署のインライン編集用のState ---
   const [editingDeptId, setEditingDeptId] = useState<string | null>(null);
   const [editDeptData, setEditDeptData] = useState<Partial<Department>>({});
+
+  // --- 更新日用のState ---
+  const [lastUpdated, setLastUpdated] = useState('');
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -68,6 +45,12 @@ export default function AdminDashboard() {
     setDepartments(data || []);
   };
 
+  // --- 更新日の取得 ---
+  const fetchSettings = async () => {
+    const { data, error } = await supabase.from('app_settings').select('value').eq('key', 'last_updated').single();
+    if (data) setLastUpdated(data.value);
+  };
+
   useEffect(() => {
     const checkAuthAndFetchData = async () => {
       const { data: { session } } = await supabase.auth.getSession();
@@ -76,7 +59,7 @@ export default function AdminDashboard() {
         return;
       }
       setLoading(true);
-      await Promise.all([fetchTemples(), fetchDepartments()]);
+      await Promise.all([fetchTemples(), fetchDepartments(), fetchSettings()]);
       setLoading(false);
     };
     checkAuthAndFetchData();
@@ -87,262 +70,56 @@ export default function AdminDashboard() {
     navigate('/admin/login');
   };
 
-  const handleDeleteTemple = async (id: string, name: string) => {
-    if (!window.confirm(`「${name || '空白のレコード'}」を削除しますか？`)) return;
-    const { error } = await supabase.from('temples').delete().eq('id', id);
-    if (!error) setTemples(temples.filter(t => t.id !== id));
-  };
-
-  const startEditing = (id: string, currentName: string) => {
-    setEditingId(id);
-    setEditPriestName(currentName || '');
-  };
-
-  const savePriestName = async (id: string) => {
-    const { error } = await supabase.from('temples').update({ priest_name: editPriestName }).eq('id', id);
-    if (!error) {
-      setTemples(temples.map(t => t.id === id ? { ...t, priest_name: editPriestName } : t));
-      setEditingId(null);
-    }
-  };
-
-  const handleAddDepartment = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newDept.name) return alert('部署名は必須です');
+  // --- 更新日の保存処理 ---
+  const handleSaveLastUpdated = async () => {
     try {
-      setLoading(true);
-      const { error } = await supabase.from('departments').insert([newDept]);
+      const { error } = await supabase.from('app_settings').upsert({ key: 'last_updated', value: lastUpdated });
       if (error) throw error;
-      setNewDept({ name: '', phone: '', ip_phone: '', fax: '', extension: '', sort_order: 0 });
-      fetchDepartments();
+      alert('名簿の更新日を保存しました。');
     } catch (err: any) {
-      alert(`追加エラー: ${err.message}`);
-    } finally {
-      setLoading(false);
+      alert(`保存エラー: ${err.message}`);
     }
   };
 
-  const handleDeleteDepartment = async (id: string, name: string) => {
-    if (!window.confirm(`部署「${name}」を削除しますか？`)) return;
-    const { error } = await supabase.from('departments').delete().eq('id', id);
-    if (!error) fetchDepartments();
-  };
-
-  const updateDeptSortOrder = async (id: string, newOrder: number) => {
-    await supabase.from('departments').update({ sort_order: newOrder }).eq('id', id);
-    fetchDepartments();
-  };
-
-  // --- 部署のインライン編集処理 ---
-  const startEditingDept = (dept: Department) => {
-    setEditingDeptId(dept.id);
-    setEditDeptData(dept);
-  };
-
-  const cancelEditingDept = () => {
-    setEditingDeptId(null);
-    setEditDeptData({});
-  };
-
-  const saveDepartment = async (id: string) => {
-    try {
-      setLoading(true);
-      const { error } = await supabase.from('departments').update({
-        name: editDeptData.name,
-        phone: editDeptData.phone,
-        ip_phone: editDeptData.ip_phone,
-        fax: editDeptData.fax,
-        extension: editDeptData.extension,
-        sort_order: editDeptData.sort_order
-      }).eq('id', id);
-      
-      if (error) throw error;
-      fetchDepartments();
-      setEditingDeptId(null);
-    } catch (err: any) {
-      alert(`更新エラー: ${err.message}`);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const parseCSVRow = (str: string) => {
-    const result = [];
-    let curVal = '';
-    let inQuotes = false;
-    for (let i = 0; i < str.length; i++) {
-      if (inQuotes) {
-        if (str[i] === '"') {
-          if (str[i + 1] === '"') { curVal += '"'; i++; }
-          else { inQuotes = false; }
-        } else { curVal += str[i]; }
-      } else {
-        if (str[i] === '"') { inQuotes = true; }
-        else if (str[i] === ',') { result.push(curVal); curVal = ''; }
-        else { curVal += str[i]; }
-      }
-    }
-    result.push(curVal);
-    return result;
-  };
-
-  const handleExportCSV = () => { /* 寺院用CSVエクスポート（省略せず維持） */
-    const headers = ['id', 'name', 'region', 'postal_code', 'address', 'phone', 'fax', 'priest_name', 'is_church', 'branches'];
-    const csvRows = temples.map(t => {
-      const branchesStr = t.branches ? t.branches.map(b => `${b.id}:${b.name}`).join('|') : '';
-      return [
-        t.id, `"${(t.name || '').replace(/"/g, '""')}"`, `"${(t.region || '').replace(/"/g, '""')}"`,
-        `"${(t.postal_code || '').replace(/"/g, '""')}"`, `"${(t.address || '').replace(/"/g, '""')}"`,
-        `"${(t.phone || '').replace(/"/g, '""')}"`, `"${(t.fax || '').replace(/"/g, '""')}"`,
-        `"${(t.priest_name || '').replace(/"/g, '""')}"`, t.is_church ? 'TRUE' : 'FALSE',
-        `"${branchesStr.replace(/"/g, '""')}"`
-      ].join(',');
-    });
-    const csvContent = '\uFEFF' + headers.join(',') + '\n' + csvRows.join('\n');
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.setAttribute('download', 'temples_backup.csv');
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-  };
-
-  const handleImportCSV = async (e: React.ChangeEvent<HTMLInputElement>) => { /* 寺院用CSVインポート（省略せず維持） */
-    const file = e.target.files?.[0];
-    if (!file) return;
-    if (!window.confirm('寺院のCSVデータでデータベースを更新します。よろしいですか？')) {
-      if (fileInputRef.current) fileInputRef.current.value = '';
-      return;
-    }
-    const reader = new FileReader();
-    reader.onload = async (event) => {
-      try {
-        setLoading(true);
-        const text = event.target?.result as string;
-        const rows = text.split(/\r?\n/).filter(row => row.trim() !== '');
-        const headers = parseCSVRow(rows[0]).map(h => h.trim());
-        const newData = rows.slice(1).map(row => {
-          const values = parseCSVRow(row);
-          const temple: any = {};
-          headers.forEach((header, index) => {
-            const val = values[index] !== undefined ? values[index].trim() : '';
-            if (header === 'id') { if (val) temple.id = val; } 
-            else if (header === 'branches') {
-              temple.branches = val ? val.split('|').map(b => {
-                const [id, name] = b.split(':');
-                return { id: id || '', name: name || '' };
-              }) : [];
-            } 
-            else if (header === 'is_church') { temple.is_church = (val.toUpperCase() === 'TRUE'); } 
-            else { temple[header] = val; }
-          });
-          return temple;
-        });
-
-        const toUpdate = newData.filter(d => d.id);
-        const toInsert = newData.filter(d => !d.id);
-
-        if (toUpdate.length > 0) {
-          const { error } = await supabase.from('temples').upsert(toUpdate);
-          if (error) throw error;
-        }
-        if (toInsert.length > 0) {
-          const { error } = await supabase.from('temples').insert(toInsert);
-          if (error) throw error;
-        }
-
-        alert('寺院のインポートが完了しました。');
-        fetchTemples();
-      } catch (err: any) {
-        alert(`エラー: ${err.message}`);
-      } finally {
-        setLoading(false);
-        if (fileInputRef.current) fileInputRef.current.value = '';
-      }
-    };
-    reader.readAsText(file);
-  };
-
-  const handleExportDepartmentsCSV = () => { /* 部署用CSVエクスポート（省略せず維持） */
-    const headers = ['id', 'name', 'phone', 'ip_phone', 'fax', 'extension', 'sort_order'];
-    const csvRows = departments.map(d => {
-      return [
-        d.id, `"${(d.name || '').replace(/"/g, '""')}"`, `"${(d.phone || '').replace(/"/g, '""')}"`,
-        `"${(d.ip_phone || '').replace(/"/g, '""')}"`, `"${(d.fax || '').replace(/"/g, '""')}"`,
-        `"${(d.extension || '').replace(/"/g, '""')}"`, d.sort_order
-      ].join(',');
-    });
-    const csvContent = '\uFEFF' + headers.join(',') + '\n' + csvRows.join('\n');
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.setAttribute('download', 'departments_backup.csv');
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-  };
-
-  const handleImportDepartmentsCSV = async (e: React.ChangeEvent<HTMLInputElement>) => { /* 部署用CSVインポート（省略せず維持） */
-    const file = e.target.files?.[0];
-    if (!file) return;
-    if (!window.confirm('部署のCSVデータでデータベースを更新します。よろしいですか？')) {
-      if (deptFileInputRef.current) deptFileInputRef.current.value = '';
-      return;
-    }
-    const reader = new FileReader();
-    reader.onload = async (event) => {
-      try {
-        setLoading(true);
-        const text = event.target?.result as string;
-        const rows = text.split(/\r?\n/).filter(row => row.trim() !== '');
-        const headers = parseCSVRow(rows[0]).map(h => h.trim());
-        const newData = rows.slice(1).map(row => {
-          const values = parseCSVRow(row);
-          const dept: any = {};
-          headers.forEach((header, index) => {
-            const val = values[index] !== undefined ? values[index].trim() : '';
-            if (header === 'id') { if (val) dept.id = val; }
-            else if (header === 'sort_order') { dept.sort_order = parseInt(val, 10) || 0; }
-            else { dept[header] = val; }
-          });
-          return dept;
-        });
-
-        const toUpdate = newData.filter(d => d.id);
-        const toInsert = newData.filter(d => !d.id);
-
-        if (toUpdate.length > 0) {
-          const { error } = await supabase.from('departments').upsert(toUpdate);
-          if (error) throw error;
-        }
-        if (toInsert.length > 0) {
-          const { error } = await supabase.from('departments').insert(toInsert);
-          if (error) throw error;
-        }
-
-        alert('部署データのインポートが完了しました。');
-        fetchDepartments();
-      } catch (err: any) {
-        alert(`エラー: ${err.message}`);
-      } finally {
-        setLoading(false);
-        if (deptFileInputRef.current) deptFileInputRef.current.value = '';
-      }
-    };
-    reader.readAsText(file);
-  };
+  // ... (寺院・部署の削除・編集・追加・CSV処理関数などはすべて前回と全く同じため省略せずにそのまま維持)
+  const handleDeleteTemple = async (id: string, name: string) => { if (!window.confirm(`「${name || '空白のレコード'}」を削除しますか？`)) return; const { error } = await supabase.from('temples').delete().eq('id', id); if (!error) setTemples(temples.filter(t => t.id !== id)); };
+  const startEditing = (id: string, currentName: string) => { setEditingId(id); setEditPriestName(currentName || ''); };
+  const savePriestName = async (id: string) => { const { error } = await supabase.from('temples').update({ priest_name: editPriestName }).eq('id', id); if (!error) { setTemples(temples.map(t => t.id === id ? { ...t, priest_name: editPriestName } : t)); setEditingId(null); } };
+  const handleAddDepartment = async (e: React.FormEvent) => { e.preventDefault(); if (!newDept.name) return alert('部署名は必須です'); try { setLoading(true); const { error } = await supabase.from('departments').insert([newDept]); if (error) throw error; setNewDept({ name: '', phone: '', ip_phone: '', fax: '', extension: '', sort_order: 0 }); fetchDepartments(); } catch (err: any) { alert(`追加エラー: ${err.message}`); } finally { setLoading(false); } };
+  const handleDeleteDepartment = async (id: string, name: string) => { if (!window.confirm(`部署「${name}」を削除しますか？`)) return; const { error } = await supabase.from('departments').delete().eq('id', id); if (!error) fetchDepartments(); };
+  const updateDeptSortOrder = async (id: string, newOrder: number) => { await supabase.from('departments').update({ sort_order: newOrder }).eq('id', id); fetchDepartments(); };
+  const startEditingDept = (dept: Department) => { setEditingDeptId(dept.id); setEditDeptData(dept); };
+  const cancelEditingDept = () => { setEditingDeptId(null); setEditDeptData({}); };
+  const saveDepartment = async (id: string) => { try { setLoading(true); const { error } = await supabase.from('departments').update({ name: editDeptData.name, phone: editDeptData.phone, ip_phone: editDeptData.ip_phone, fax: editDeptData.fax, extension: editDeptData.extension, sort_order: editDeptData.sort_order }).eq('id', id); if (error) throw error; fetchDepartments(); setEditingDeptId(null); } catch (err: any) { alert(`更新エラー: ${err.message}`); } finally { setLoading(false); } };
+  
+  const parseCSVRow = (str: string) => { const result = []; let curVal = ''; let inQuotes = false; for (let i = 0; i < str.length; i++) { if (inQuotes) { if (str[i] === '"') { if (str[i + 1] === '"') { curVal += '"'; i++; } else { inQuotes = false; } } else { curVal += str[i]; } } else { if (str[i] === '"') { inQuotes = true; } else if (str[i] === ',') { result.push(curVal); curVal = ''; } else { curVal += str[i]; } } } result.push(curVal); return result; };
+  const handleExportCSV = () => { const headers = ['id', 'name', 'region', 'postal_code', 'address', 'phone', 'fax', 'priest_name', 'is_church', 'branches']; const csvRows = temples.map(t => { const branchesStr = t.branches ? t.branches.map(b => `${b.id}:${b.name}`).join('|') : ''; return [ t.id, `"${(t.name || '').replace(/"/g, '""')}"`, `"${(t.region || '').replace(/"/g, '""')}"`, `"${(t.postal_code || '').replace(/"/g, '""')}"`, `"${(t.address || '').replace(/"/g, '""')}"`, `"${(t.phone || '').replace(/"/g, '""')}"`, `"${(t.fax || '').replace(/"/g, '""')}"`, `"${(t.priest_name || '').replace(/"/g, '""')}"`, t.is_church ? 'TRUE' : 'FALSE', `"${branchesStr.replace(/"/g, '""')}"` ].join(','); }); const csvContent = '\uFEFF' + headers.join(',') + '\n' + csvRows.join('\n'); const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' }); const url = URL.createObjectURL(blob); const link = document.createElement('a'); link.href = url; link.setAttribute('download', 'temples_backup.csv'); document.body.appendChild(link); link.click(); document.body.removeChild(link); };
+  const handleImportCSV = async (e: React.ChangeEvent<HTMLInputElement>) => { const file = e.target.files?.[0]; if (!file) return; if (!window.confirm('寺院のCSVデータでデータベースを更新します。よろしいですか？')) { if (fileInputRef.current) fileInputRef.current.value = ''; return; } const reader = new FileReader(); reader.onload = async (event) => { try { setLoading(true); const text = event.target?.result as string; const rows = text.split(/\r?\n/).filter(row => row.trim() !== ''); const headers = parseCSVRow(rows[0]).map(h => h.trim()); const newData = rows.slice(1).map(row => { const values = parseCSVRow(row); const temple: any = {}; headers.forEach((header, index) => { const val = values[index] !== undefined ? values[index].trim() : ''; if (header === 'id') { if (val) temple.id = val; } else if (header === 'branches') { temple.branches = val ? val.split('|').map(b => { const [id, name] = b.split(':'); return { id: id || '', name: name || '' }; }) : []; } else if (header === 'is_church') { temple.is_church = (val.toUpperCase() === 'TRUE'); } else { temple[header] = val; } }); return temple; }); const toUpdate = newData.filter(d => d.id); const toInsert = newData.filter(d => !d.id); if (toUpdate.length > 0) { const { error } = await supabase.from('temples').upsert(toUpdate); if (error) throw error; } if (toInsert.length > 0) { const { error } = await supabase.from('temples').insert(toInsert); if (error) throw error; } alert('寺院のインポートが完了しました。'); fetchTemples(); } catch (err: any) { alert(`エラー: ${err.message}`); } finally { setLoading(false); if (fileInputRef.current) fileInputRef.current.value = ''; } }; reader.readAsText(file); };
+  const handleExportDepartmentsCSV = () => { const headers = ['id', 'name', 'phone', 'ip_phone', 'fax', 'extension', 'sort_order']; const csvRows = departments.map(d => { return [ d.id, `"${(d.name || '').replace(/"/g, '""')}"`, `"${(d.phone || '').replace(/"/g, '""')}"`, `"${(d.ip_phone || '').replace(/"/g, '""')}"`, `"${(d.fax || '').replace(/"/g, '""')}"`, `"${(d.extension || '').replace(/"/g, '""')}"`, d.sort_order ].join(','); }); const csvContent = '\uFEFF' + headers.join(',') + '\n' + csvRows.join('\n'); const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' }); const url = URL.createObjectURL(blob); const link = document.createElement('a'); link.href = url; link.setAttribute('download', 'departments_backup.csv'); document.body.appendChild(link); link.click(); document.body.removeChild(link); };
+  const handleImportDepartmentsCSV = async (e: React.ChangeEvent<HTMLInputElement>) => { const file = e.target.files?.[0]; if (!file) return; if (!window.confirm('部署のCSVデータでデータベースを更新します。よろしいですか？')) { if (deptFileInputRef.current) deptFileInputRef.current.value = ''; return; } const reader = new FileReader(); reader.onload = async (event) => { try { setLoading(true); const text = event.target?.result as string; const rows = text.split(/\r?\n/).filter(row => row.trim() !== ''); const headers = parseCSVRow(rows[0]).map(h => h.trim()); const newData = rows.slice(1).map(row => { const values = parseCSVRow(row); const dept: any = {}; headers.forEach((header, index) => { const val = values[index] !== undefined ? values[index].trim() : ''; if (header === 'id') { if (val) dept.id = val; } else if (header === 'sort_order') { dept.sort_order = parseInt(val, 10) || 0; } else { dept[header] = val; } }); return dept; }); const toUpdate = newData.filter(d => d.id); const toInsert = newData.filter(d => !d.id); if (toUpdate.length > 0) { const { error } = await supabase.from('departments').upsert(toUpdate); if (error) throw error; } if (toInsert.length > 0) { const { error } = await supabase.from('departments').insert(toInsert); if (error) throw error; } alert('部署データのインポートが完了しました。'); fetchDepartments(); } catch (err: any) { alert(`エラー: ${err.message}`); } finally { setLoading(false); if (deptFileInputRef.current) deptFileInputRef.current.value = ''; } }; reader.readAsText(file); };
 
   if (loading) return <div style={{ padding: '20px' }}>読み込み中...</div>;
   if (error) return <div style={{ padding: '20px', color: 'red' }}>エラー: {error}</div>;
 
   return (
     <div style={{ padding: '20px', maxWidth: '1000px', margin: '0 auto' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', flexWrap: 'wrap', gap: '10px' }}>
         <h1>管理者ダッシュボード</h1>
         <button onClick={handleLogout} style={{ padding: '8px 16px', cursor: 'pointer' }}>ログアウト</button>
+      </div>
+
+      {/* --- 更新日の設定エリアを追加 --- */}
+      <div style={{ background: '#e9ecef', padding: '15px', borderRadius: '8px', marginBottom: '20px', display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+        <strong style={{ fontSize: '16px' }}>名簿の公開更新日:</strong>
+        <input 
+          type="date" 
+          value={lastUpdated} 
+          onChange={(e) => setLastUpdated(e.target.value)} 
+          style={{ padding: '8px', fontSize: '16px', borderRadius: '4px', border: '1px solid #ccc' }}
+        />
+        <button onClick={handleSaveLastUpdated} style={{ padding: '8px 16px', background: '#343a40', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>
+          日付を保存する
+        </button>
       </div>
 
       <div style={{ display: 'flex', gap: '10px', marginBottom: '20px', borderBottom: '2px solid #ccc', paddingBottom: '10px' }}>
@@ -442,20 +219,11 @@ export default function AdminDashboard() {
                 departments.map((dept) => (
                   <tr key={dept.id} style={{ borderBottom: '1px solid #eee' }}>
                     {editingDeptId === dept.id ? (
-                      // --- 編集モードの表示 ---
                       <>
-                        <td style={{ padding: '10px' }}>
-                          <input type="number" value={editDeptData.sort_order || 0} onChange={e => setEditDeptData({...editDeptData, sort_order: Number(e.target.value)})} style={{ width: '50px', padding: '4px' }} />
-                        </td>
-                        <td style={{ padding: '10px' }}>
-                          <input type="text" value={editDeptData.name || ''} onChange={e => setEditDeptData({...editDeptData, name: e.target.value})} style={{ width: '100%', padding: '4px', boxSizing: 'border-box' }} />
-                        </td>
-                        <td style={{ padding: '10px' }}>
-                          <input type="text" value={editDeptData.phone || ''} onChange={e => setEditDeptData({...editDeptData, phone: e.target.value})} style={{ width: '100%', padding: '4px', boxSizing: 'border-box' }} />
-                        </td>
-                        <td style={{ padding: '10px' }}>
-                          <input type="text" value={editDeptData.ip_phone || ''} onChange={e => setEditDeptData({...editDeptData, ip_phone: e.target.value})} style={{ width: '100%', padding: '4px', boxSizing: 'border-box' }} />
-                        </td>
+                        <td style={{ padding: '10px' }}><input type="number" value={editDeptData.sort_order || 0} onChange={e => setEditDeptData({...editDeptData, sort_order: Number(e.target.value)})} style={{ width: '50px', padding: '4px' }} /></td>
+                        <td style={{ padding: '10px' }}><input type="text" value={editDeptData.name || ''} onChange={e => setEditDeptData({...editDeptData, name: e.target.value})} style={{ width: '100%', padding: '4px', boxSizing: 'border-box' }} /></td>
+                        <td style={{ padding: '10px' }}><input type="text" value={editDeptData.phone || ''} onChange={e => setEditDeptData({...editDeptData, phone: e.target.value})} style={{ width: '100%', padding: '4px', boxSizing: 'border-box' }} /></td>
+                        <td style={{ padding: '10px' }}><input type="text" value={editDeptData.ip_phone || ''} onChange={e => setEditDeptData({...editDeptData, ip_phone: e.target.value})} style={{ width: '100%', padding: '4px', boxSizing: 'border-box' }} /></td>
                         <td style={{ padding: '10px' }}>
                           <input type="text" value={editDeptData.fax || ''} onChange={e => setEditDeptData({...editDeptData, fax: e.target.value})} placeholder="FAX" style={{ width: '100%', padding: '4px', marginBottom: '4px', boxSizing: 'border-box' }} /><br/>
                           <input type="text" value={editDeptData.extension || ''} onChange={e => setEditDeptData({...editDeptData, extension: e.target.value})} placeholder="内線" style={{ width: '100%', padding: '4px', boxSizing: 'border-box' }} />
@@ -466,24 +234,12 @@ export default function AdminDashboard() {
                         </td>
                       </>
                     ) : (
-                      // --- 通常表示モード ---
                       <>
-                        <td style={{ padding: '10px' }}>
-                          <input 
-                            type="number" 
-                            defaultValue={dept.sort_order} 
-                            onBlur={(e) => updateDeptSortOrder(dept.id, Number(e.target.value))}
-                            style={{ width: '50px', padding: '4px' }}
-                            title="数字を変更して枠外をクリックすると並び順が更新されます"
-                          />
-                        </td>
+                        <td style={{ padding: '10px' }}><input type="number" defaultValue={dept.sort_order} onBlur={(e) => updateDeptSortOrder(dept.id, Number(e.target.value))} style={{ width: '50px', padding: '4px' }} title="数字を変更して枠外をクリックすると並び順が更新されます" /></td>
                         <td style={{ padding: '10px', fontWeight: 'bold' }}>{dept.name}</td>
                         <td style={{ padding: '10px' }}>{dept.phone || '-'}</td>
                         <td style={{ padding: '10px' }}>{dept.ip_phone || '-'}</td>
-                        <td style={{ padding: '10px' }}>
-                          FAX: {dept.fax || '-'}<br/>
-                          内線: {dept.extension || '-'}
-                        </td>
+                        <td style={{ padding: '10px' }}>FAX: {dept.fax || '-'}<br/>内線: {dept.extension || '-'}</td>
                         <td style={{ padding: '10px', textAlign: 'center', display: 'flex', gap: '5px', justifyContent: 'center' }}>
                           <button onClick={() => startEditingDept(dept)} style={{ padding: '4px 8px', background: '#17a2b8', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>編集</button>
                           <button onClick={() => handleDeleteDepartment(dept.id, dept.name)} style={{ padding: '4px 8px', background: '#dc3545', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>削除</button>
