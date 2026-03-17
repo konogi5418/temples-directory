@@ -81,7 +81,6 @@ export default function AdminDashboard() {
   
   const parseCSVRow = (str: string) => { const result = []; let curVal = ''; let inQuotes = false; for (let i = 0; i < str.length; i++) { if (inQuotes) { if (str[i] === '"') { if (str[i + 1] === '"') { curVal += '"'; i++; } else { inQuotes = false; } } else { curVal += str[i]; } } else { if (str[i] === '"') { inQuotes = true; } else if (str[i] === ',') { result.push(curVal); curVal = ''; } else { curVal += str[i]; } } } result.push(curVal); return result; };
   
-  // CSVヘッダーと処理に代務者・副住職を追加
   const handleExportCSV = () => { 
     const headers = ['id', 'name', 'region', 'postal_code', 'address', 'phone', 'fax', 'priest_name', 'acting_priest', 'vice_priest', 'resident_priests', 'is_church', 'branches']; 
     const csvRows = temples.map(t => { 
@@ -108,23 +107,45 @@ export default function AdminDashboard() {
 
   if (loading) return <div style={{ padding: '20px' }}>読み込み中...</div>;
 
+  // 寺院のハイフン除去検索
   const filteredTemples = temples.filter(t => {
     if (!searchQueryTemple) return true;
-    const q = searchQueryTemple.toLowerCase();
+    const qNormal = searchQueryTemple.toLowerCase();
+    const qStripped = qNormal.replace(/-/g, '');
+    
+    const phoneStripped = (t.phone || '').replace(/-/g, '');
+    const faxStripped = (t.fax || '').replace(/-/g, '');
+
     return (
-      (t.name && t.name.toLowerCase().includes(q)) ||
-      (t.region && t.region.toLowerCase().includes(q)) ||
-      (t.priest_name && t.priest_name.toLowerCase().includes(q)) ||
-      (t.acting_priest && t.acting_priest.toLowerCase().includes(q)) ||
-      (t.vice_priest && t.vice_priest.toLowerCase().includes(q)) ||
-      (t.resident_priests && t.resident_priests.toLowerCase().includes(q))
+      (t.name && t.name.toLowerCase().includes(qNormal)) ||
+      (t.region && t.region.toLowerCase().includes(qNormal)) ||
+      (t.priest_name && t.priest_name.toLowerCase().includes(qNormal)) ||
+      (t.acting_priest && t.acting_priest.toLowerCase().includes(qNormal)) ||
+      (t.vice_priest && t.vice_priest.toLowerCase().includes(qNormal)) ||
+      (t.resident_priests && t.resident_priests.toLowerCase().includes(qNormal)) ||
+      (phoneStripped && phoneStripped.includes(qStripped)) ||
+      (faxStripped && faxStripped.includes(qStripped))
     );
   });
 
+  // 部署のハイフン除去検索
   const filteredDepartments = departments.filter(d => {
     if (!searchQueryDept) return true;
-    const q = searchQueryDept.toLowerCase();
-    return (d.name && d.name.toLowerCase().includes(q)) || (d.phone && d.phone.includes(q)) || (d.extension && d.extension.includes(q));
+    const qNormal = searchQueryDept.toLowerCase();
+    const qStripped = qNormal.replace(/-/g, '');
+
+    const phoneStripped = (d.phone || '').replace(/-/g, '');
+    const ipPhoneStripped = (d.ip_phone || '').replace(/-/g, '');
+    const faxStripped = (d.fax || '').replace(/-/g, '');
+    const extStripped = (d.extension || '').replace(/-/g, '');
+
+    return (
+      (d.name && d.name.toLowerCase().includes(qNormal)) ||
+      (phoneStripped && phoneStripped.includes(qStripped)) ||
+      (ipPhoneStripped && ipPhoneStripped.includes(qStripped)) ||
+      (faxStripped && faxStripped.includes(qStripped)) ||
+      (extStripped && extStripped.includes(qStripped))
+    );
   });
 
   return (
@@ -156,7 +177,7 @@ export default function AdminDashboard() {
             </div>
             <input 
               type="text" 
-              placeholder="寺院名・役職者などで検索" 
+              placeholder="寺院名・電話番号(ハイフンなし可)等で検索" 
               value={searchQueryTemple} 
               onChange={(e) => setSearchQueryTemple(e.target.value)} 
               style={{ padding: '8px', width: '300px', border: '1px solid #ccc', borderRadius: '4px' }}
@@ -182,7 +203,6 @@ export default function AdminDashboard() {
                   </td>
                   <td style={{ padding: '10px' }}>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                      {/* 1. 住職・主管（インライン編集可） */}
                       <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                         <span style={{ fontSize: '11px', color: '#fff', background: '#343a40', padding: '1px 4px', borderRadius: '3px', width: '32px', textAlign: 'center' }}>
                           {temple.is_church ? '主管' : '住職'}
@@ -193,21 +213,18 @@ export default function AdminDashboard() {
                           <div onClick={() => startEditing(temple.id, temple.priest_name)} style={{ cursor: 'pointer', borderBottom: '1px dashed #ccc' }}>{temple.priest_name || '（未設定）'}</div>
                         )}
                       </div>
-                      {/* 2. 代務者 */}
                       {temple.acting_priest && (
                         <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                           <span style={{ fontSize: '10px', color: '#fff', background: '#6c757d', padding: '1px 4px', borderRadius: '3px', width: '32px', textAlign: 'center' }}>代務</span>
                           <span style={{ fontSize: '13px', color: '#444' }}>{temple.acting_priest}</span>
                         </div>
                       )}
-                      {/* 3. 副住職 */}
                       {temple.vice_priest && (
                         <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                           <span style={{ fontSize: '10px', color: '#fff', background: '#adb5bd', padding: '1px 4px', borderRadius: '3px', width: '32px', textAlign: 'center' }}>副住職</span>
                           <span style={{ fontSize: '13px', color: '#444' }}>{temple.vice_priest}</span>
                         </div>
                       )}
-                      {/* 4. 在勤者 */}
                       {temple.resident_priests && (
                         <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                           <span style={{ fontSize: '10px', color: '#495057', background: '#e9ecef', border: '1px solid #ced4da', padding: '0px 3px', borderRadius: '3px', width: '32px', textAlign: 'center' }}>在勤</span>
@@ -227,7 +244,6 @@ export default function AdminDashboard() {
         </>
       )}
 
-      {/* 部署管理タブの中身（変更なしのため省略せず記述） */}
       {activeTab === 'departments' && (
         <>
           <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '15px', flexWrap: 'wrap', gap: '15px' }}>
@@ -236,7 +252,7 @@ export default function AdminDashboard() {
               <input type="file" accept=".csv" ref={deptFileInputRef} onChange={handleImportDepartmentsCSV} style={{ display: 'none' }} />
               <button onClick={() => deptFileInputRef.current?.click()} style={{ padding: '8px 16px', background: '#ffc107', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>↑ 部署CSV読込</button>
             </div>
-            <input type="text" placeholder="部署名・電話番号で検索" value={searchQueryDept} onChange={(e) => setSearchQueryDept(e.target.value)} style={{ padding: '8px', width: '300px', border: '1px solid #ccc', borderRadius: '4px' }} />
+            <input type="text" placeholder="部署名・電話番号(ハイフンなし可)等で検索" value={searchQueryDept} onChange={(e) => setSearchQueryDept(e.target.value)} style={{ padding: '8px', width: '300px', border: '1px solid #ccc', borderRadius: '4px' }} />
           </div>
 
           <div style={{ background: '#f8f9fa', padding: '15px', borderRadius: '8px', marginBottom: '20px', border: '1px solid #ddd' }}>

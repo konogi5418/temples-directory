@@ -66,16 +66,27 @@ export default function DirectoryHome() {
   if (loading) return <div style={{ padding: '20px' }}>読み込み中...</div>;
   if (error) return <div style={{ padding: '20px', color: 'red' }}>エラー: {error}</div>;
 
-  const lowerQuery = searchQuery.toLowerCase();
   const isSearching = searchQuery.trim() !== '';
+  // 通常の小文字検索用キーワード
+  const qNormal = searchQuery.toLowerCase();
+  // ハイフンを除去した電話番号検索用キーワード
+  const qStripped = qNormal.replace(/-/g, '');
 
   const filteredDepartments = departments.filter(dept => {
     if (!isSearching) return true;
+    
+    // データベースの番号からもハイフンを除去して比較する
+    const phoneStripped = (dept.phone || '').replace(/-/g, '');
+    const ipPhoneStripped = (dept.ip_phone || '').replace(/-/g, '');
+    const faxStripped = (dept.fax || '').replace(/-/g, '');
+    const extStripped = (dept.extension || '').replace(/-/g, '');
+
     return (
-      (dept.name && dept.name.toLowerCase().includes(lowerQuery)) ||
-      (dept.phone && dept.phone.includes(lowerQuery)) ||
-      (dept.ip_phone && dept.ip_phone.includes(lowerQuery)) ||
-      (dept.extension && dept.extension.includes(lowerQuery))
+      (dept.name && dept.name.toLowerCase().includes(qNormal)) ||
+      (phoneStripped && phoneStripped.includes(qStripped)) ||
+      (ipPhoneStripped && ipPhoneStripped.includes(qStripped)) ||
+      (faxStripped && faxStripped.includes(qStripped)) ||
+      (extStripped && extStripped.includes(qStripped))
     );
   });
 
@@ -142,15 +153,21 @@ export default function DirectoryHome() {
           const temples = groupedTemples[region];
           const filteredTemples = temples.filter(temple => {
             if (!isSearching) return true;
+            
+            // 寺院の電話・FAXからもハイフンを除去
+            const phoneStripped = (temple.phone || '').replace(/-/g, '');
+            const faxStripped = (temple.fax || '').replace(/-/g, '');
+
             return (
-              (temple.name && temple.name.toLowerCase().includes(lowerQuery)) ||
-              (temple.address && temple.address.toLowerCase().includes(lowerQuery)) ||
-              (temple.priest_name && temple.priest_name.toLowerCase().includes(lowerQuery)) ||
-              (temple.acting_priest && temple.acting_priest.toLowerCase().includes(lowerQuery)) ||
-              (temple.vice_priest && temple.vice_priest.toLowerCase().includes(lowerQuery)) ||
-              (temple.resident_priests && temple.resident_priests.toLowerCase().includes(lowerQuery)) ||
-              (temple.phone && temple.phone.includes(lowerQuery)) ||
-              (temple.branches && temple.branches.some(b => b.id.toLowerCase().includes(lowerQuery) || b.name.toLowerCase().includes(lowerQuery)))
+              (temple.name && temple.name.toLowerCase().includes(qNormal)) ||
+              (temple.address && temple.address.toLowerCase().includes(qNormal)) ||
+              (temple.priest_name && temple.priest_name.toLowerCase().includes(qNormal)) ||
+              (temple.acting_priest && temple.acting_priest.toLowerCase().includes(qNormal)) ||
+              (temple.vice_priest && temple.vice_priest.toLowerCase().includes(qNormal)) ||
+              (temple.resident_priests && temple.resident_priests.toLowerCase().includes(qNormal)) ||
+              (phoneStripped && phoneStripped.includes(qStripped)) ||
+              (faxStripped && faxStripped.includes(qStripped)) ||
+              (temple.branches && temple.branches.some(b => b.id.toLowerCase().includes(qNormal) || b.name.toLowerCase().includes(qNormal)))
             );
           });
 
@@ -190,41 +207,31 @@ export default function DirectoryHome() {
                         <strong>電話:</strong> {temple.phone ? (<a href={`tel:${temple.phone}`} style={{ color: '#0066cc', textDecoration: 'underline' }}>{temple.phone}</a>) : ('（未登録）')} / <strong>FAX:</strong> {temple.fax || '（未登録）'}
                       </p>
                       
-                      {/* --- 役職者の表示エリア（優先順位順） --- */}
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', background: '#f8f9fa', padding: '10px', borderRadius: '6px', border: '1px solid #eee' }}>
-                        
-                        {/* 1. 住職・主管 */}
                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                           <span style={{ fontSize: '11px', fontWeight: 'bold', color: '#fff', background: '#343a40', padding: '2px 6px', borderRadius: '3px', width: '36px', textAlign: 'center' }}>
                             {temple.is_church ? '主管' : '住職'}
                           </span>
                           <span>{temple.priest_name || '（未設定）'}</span>
                         </div>
-                        
-                        {/* 2. 代務者 */}
                         {temple.acting_priest && (
                           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                             <span style={{ fontSize: '11px', fontWeight: 'bold', color: '#fff', background: '#6c757d', padding: '2px 6px', borderRadius: '3px', width: '36px', textAlign: 'center' }}>代務</span>
                             <span>{temple.acting_priest}</span>
                           </div>
                         )}
-
-                        {/* 3. 副住職 */}
                         {temple.vice_priest && (
                           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                             <span style={{ fontSize: '11px', fontWeight: 'bold', color: '#fff', background: '#adb5bd', padding: '2px 6px', borderRadius: '3px', width: '36px', textAlign: 'center' }}>副住職</span>
                             <span>{temple.vice_priest}</span>
                           </div>
                         )}
-
-                        {/* 4. 在勤者 */}
                         {temple.resident_priests && (
                           <div style={{ display: 'flex', alignItems: 'flex-start', gap: '8px' }}>
                             <span style={{ fontSize: '11px', fontWeight: 'bold', color: '#495057', background: '#e9ecef', border: '1px solid #ced4da', padding: '1px 5px', borderRadius: '3px', width: '36px', textAlign: 'center', marginTop: '2px' }}>在勤</span>
                             <span>{temple.resident_priests}</span>
                           </div>
                         )}
-                        
                       </div>
                     </div>
                   </div>
