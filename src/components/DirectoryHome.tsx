@@ -110,7 +110,7 @@ export default function DirectoryHome() {
       <div style={{ marginBottom: '20px', padding: '15px', background: '#f5f5f5', borderRadius: '8px' }}>
         <input
           type="text"
-          placeholder="寺院名、役職者名、住所、電話番号などで検索"
+          placeholder="寺院・役職・住所・電話等で検索"
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
           style={{ width: '100%', padding: '10px', fontSize: '16px', boxSizing: 'border-box', border: '1px solid #ccc', borderRadius: '4px' }}

@@ -177,10 +177,10 @@ export default function AdminDashboard() {
             </div>
             <input 
               type="text" 
-              placeholder="寺院名・電話番号(ハイフンなし可)等で検索" 
+              placeholder="寺院名・役職・電話等で検索" 
               value={searchQueryTemple} 
               onChange={(e) => setSearchQueryTemple(e.target.value)} 
-              style={{ padding: '8px', width: '300px', border: '1px solid #ccc', borderRadius: '4px' }}
+              style={{ padding: '8px', width: '100%', maxWidth: '300px', border: '1px solid #ccc', borderRadius: '4px', boxSizing: 'border-box' }}
             />
           </div>
           
@@ -252,7 +252,7 @@ export default function AdminDashboard() {
               <input type="file" accept=".csv" ref={deptFileInputRef} onChange={handleImportDepartmentsCSV} style={{ display: 'none' }} />
               <button onClick={() => deptFileInputRef.current?.click()} style={{ padding: '8px 16px', background: '#ffc107', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>↑ 部署CSV読込</button>
             </div>
-            <input type="text" placeholder="部署名・電話番号(ハイフンなし可)等で検索" value={searchQueryDept} onChange={(e) => setSearchQueryDept(e.target.value)} style={{ padding: '8px', width: '300px', border: '1px solid #ccc', borderRadius: '4px' }} />
+            <input type="text" placeholder="部署名・電話・内線等で検索" value={searchQueryDept} onChange={(e) => setSearchQueryDept(e.target.value)} style={{ padding: '8px', width: '300px', border: '1px solid #ccc', borderRadius: '4px' }} />
           </div>
 
           <div style={{ background: '#f8f9fa', padding: '15px', borderRadius: '8px', marginBottom: '20px', border: '1px solid #ddd' }}>
