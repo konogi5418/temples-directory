@@ -67,15 +67,12 @@ export default function DirectoryHome() {
   if (error) return <div style={{ padding: '20px', color: 'red' }}>エラー: {error}</div>;
 
   const isSearching = searchQuery.trim() !== '';
-  // 通常の小文字検索用キーワード
   const qNormal = searchQuery.toLowerCase();
-  // ハイフンを除去した電話番号検索用キーワード
   const qStripped = qNormal.replace(/-/g, '');
 
   const filteredDepartments = departments.filter(dept => {
     if (!isSearching) return true;
     
-    // データベースの番号からもハイフンを除去して比較する
     const phoneStripped = (dept.phone || '').replace(/-/g, '');
     const ipPhoneStripped = (dept.ip_phone || '').replace(/-/g, '');
     const faxStripped = (dept.fax || '').replace(/-/g, '');
@@ -99,7 +96,14 @@ export default function DirectoryHome() {
   return (
     <div style={{ padding: '20px', maxWidth: '800px', margin: '0 auto' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', borderBottom: '2px solid #333', paddingBottom: '10px', marginBottom: '20px', flexWrap: 'wrap' }}>
-        <h1 style={{ margin: 0 }}>日蓮正宗寺院名簿</h1>
+        {/* タイトルをクリック可能にし、検索をリセットする処理を追加 */}
+        <h1 
+          onClick={() => setSearchQuery('')} 
+          style={{ margin: 0, cursor: 'pointer' }}
+          title="クリックで検索をクリアしてトップに戻る"
+        >
+          日蓮正宗寺院名簿
+        </h1>
         {lastUpdated && (
           <span style={{ fontSize: '14px', color: '#666', fontWeight: 'bold' }}>
             現在の最新版：{formatDate(lastUpdated)} 更新
@@ -107,14 +111,23 @@ export default function DirectoryHome() {
         )}
       </div>
 
-      <div style={{ marginBottom: '20px', padding: '15px', background: '#f5f5f5', borderRadius: '8px' }}>
+      <div style={{ marginBottom: '20px', padding: '15px', background: '#f5f5f5', borderRadius: '8px', display: 'flex', gap: '10px' }}>
         <input
           type="text"
           placeholder="寺院・役職・住所・電話等で検索"
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
-          style={{ width: '100%', padding: '10px', fontSize: '16px', boxSizing: 'border-box', border: '1px solid #ccc', borderRadius: '4px' }}
+          style={{ flex: 1, padding: '10px', fontSize: '16px', boxSizing: 'border-box', border: '1px solid #ccc', borderRadius: '4px', width: '100%' }}
         />
+        {/* 検索文字が入っている時だけ「クリア」ボタンを表示 */}
+        {isSearching && (
+          <button 
+            onClick={() => setSearchQuery('')} 
+            style={{ padding: '10px 15px', background: '#6c757d', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer', whiteSpace: 'nowrap', fontSize: '15px' }}
+          >
+            クリア
+          </button>
+        )}
       </div>
 
       {filteredDepartments.length > 0 && (
@@ -154,7 +167,6 @@ export default function DirectoryHome() {
           const filteredTemples = temples.filter(temple => {
             if (!isSearching) return true;
             
-            // 寺院の電話・FAXからもハイフンを除去
             const phoneStripped = (temple.phone || '').replace(/-/g, '');
             const faxStripped = (temple.fax || '').replace(/-/g, '');
 
